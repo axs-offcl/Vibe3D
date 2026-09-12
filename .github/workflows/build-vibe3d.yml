@@ -28,34 +28,22 @@ jobs:
             git -C source log -1 --format='%H %d %s'
           fi
 
-      - name: Install Chocolatey
+      # Portable, self-contained svn (no MSI, no registry, no PATH-snapshot trap).
+      # Verified: Apache-Subversion-1.14.5.zip contains bin/svn.exe + all libsvn DLLs.
+      - name: Install Subversion (portable)
         shell: pwsh
         run: |
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          iex ((Invoke-WebRequest -Uri https://community.chocolatey.org/install.ps1).Content)
-
-      - name: Install Subversion
-        shell: pwsh
-        run: |
-          choco install svn -y
-          # Resolve where the MSI put svn.exe and propagate to later steps.
-          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\svn.exe'
-          $svnExe = (Get-ItemProperty $key -ErrorAction SilentlyContinue).Path
-          if (-not $svnExe) {
-            $key = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\App Paths\svn.exe'
-            $svnExe = (Get-ItemProperty $key -ErrorAction SilentlyContinue).Path
-          }
-          if (-not $svnExe) { $svnExe = "$env:ProgramFiles\Subversion\bin\svn.exe" }
-          $bin = Split-Path $svnExe
-          Add-Content $env:GITHUB_PATH $bin
-          Write-Host "svn resolved to: $svnExe"
+          $zip = "$env:TEMP\svn.zip"
+          Invoke-WebRequest -Uri "https://www.visualsvn.com/files/Apache-Subversion-1.14.5.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:USERPROFILE\svn" -Force
+          Add-Content $env:GITHUB_PATH "$env:USERPROFILE\svn\bin"
 
       - name: Fetch Blender Windows precompiled libs
         shell: bash
         run: |
           # Blender 2.83 expects a lib/ dir next to the source dir.
           if [ ! -d lib/windows64_vc15 ]; then
-            svn checkout https://svn.blender.org/svnroot/bf-blender/trunk/lib/windows64_vc15 lib/windows64_vc15
+            svn checkout --non-interactive https://svn.blender.org/svnroot/bf-blender/trunk/lib/windows64_vc15 lib/windows64_vc15
           else
             echo "Windows libs already present."
           fi
