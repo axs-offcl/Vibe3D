@@ -47,6 +47,11 @@ jobs:
         with:
           arch: x64
 
+      - name: Apply Vibe3D branding
+        shell: bash
+        run: |
+          python scripts/apply-branding.py --source-dir source
+
       - name: Configure (stripped feature set)
         shell: bash
         run: |
