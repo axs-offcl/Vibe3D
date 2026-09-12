@@ -29,9 +29,10 @@ jobs:
           fi
 
       - name: Install Chocolatey
-        uses: coreybutler/action-install-chocolatey@latest
-        with:
-          arch: x64
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          iex ((Invoke-WebRequest -Uri https://community.chocolatey.org/install.ps1).Content)
 
       - name: Install Subversion
         shell: pwsh
