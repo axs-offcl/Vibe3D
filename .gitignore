@@ -1,0 +1,45 @@
+# Vibe3D .gitignore
+
+# Blender upstream source (fetched by scripts/fetch-blender.sh, never committed)
+/source/
+
+# Blender Windows precompiled libs (fetched via svn in CI, never committed)
+/lib/
+
+# CMake build trees
+/build*/
+/*_build/
+
+# CMake / MSVC artefacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+.vs/
+x64/
+Release/
+Debug/
+
+# Compiled output
+*.exe
+*.dll
+*.obj
+*.pdb
+*.lib
+*.exp
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

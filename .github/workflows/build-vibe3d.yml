@@ -1,0 +1,80 @@
+name: Build Vibe3D (Windows)
+
+# Compiles the stripped Blender 2.83 LTS source in source/ into Vibe3D.exe.
+# Feature-stripping flags are the single source of truth for what we cut;
+# keep them in sync with docs/STRIP_LIST.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout Vibe3D repo
+        uses: actions/checkout@v4
+
+      - name: Fetch Blender 2.83 LTS source (shallow)
+        shell: bash
+        run: |
+          if [ ! -d source/.git ]; then
+            bash scripts/fetch-blender.sh
+          else
+            git -C source log -1 --format='%H %d %s'
+          fi
+
+      - name: Fetch Blender Windows precompiled libs
+        shell: bash
+        run: |
+          # Blender 2.83 expects a lib/ dir next to the source dir.
+          if [ ! -d lib/windows64_vc15 ]; then
+            svn checkout https://svn.blender.org/svnroot/bf-blender/trunk/lib/windows64_vc15 lib/windows64_vc15
+          else
+            echo "Windows libs already present."
+          fi
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure (stripped feature set)
+        shell: bash
+        run: |
+          cmake -S source -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DWITH_CYCLES=OFF \
+            -DWITH_BULLET=OFF \
+            -DWITH_MOD_FLUID=OFF \
+            -DWITH_MOD_OCEANSIM=OFF \
+            -DWITH_COMPOSITOR=OFF \
+            -DWITH_FREESTYLE=OFF \
+            -DWITH_OPENVDB=OFF \
+            -DWITH_ALEMBIC=OFF \
+            -DWITH_USD=OFF \
+            -DWITH_OPENCOLLADA=OFF
+
+      - name: Build
+        shell: bash
+        run: cmake --build build --config Release --parallel
+
+      - name: Rename to Vibe3D.exe
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter blender.exe | Select-Object -First 1
+          if (-not $exe) { throw "blender.exe not found under build/" }
+          $dest = Join-Path $exe.DirectoryName "Vibe3D.exe"
+          Copy-Item $exe.FullName $dest
+          Write-Host "Vibe3D.exe at $dest"
+
+      - name: Upload Vibe3D.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vibe3D-windows-x64
+          path: build/**/Vibe3D.exe
