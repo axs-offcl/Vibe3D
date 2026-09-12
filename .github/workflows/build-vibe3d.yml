@@ -28,6 +28,11 @@ jobs:
             git -C source log -1 --format='%H %d %s'
           fi
 
+      - name: Install Chocolatey
+        uses: coreybutler/action-install-chocolatey@latest
+        with:
+          arch: x64
+
       - name: Install Subversion
         shell: pwsh
         run: choco install subversion -y
