@@ -36,7 +36,19 @@ jobs:
 
       - name: Install Subversion
         shell: pwsh
-        run: choco install svn -y
+        run: |
+          choco install svn -y
+          # Resolve where the MSI put svn.exe and propagate to later steps.
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\svn.exe'
+          $svnExe = (Get-ItemProperty $key -ErrorAction SilentlyContinue).Path
+          if (-not $svnExe) {
+            $key = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\App Paths\svn.exe'
+            $svnExe = (Get-ItemProperty $key -ErrorAction SilentlyContinue).Path
+          }
+          if (-not $svnExe) { $svnExe = "$env:ProgramFiles\Subversion\bin\svn.exe" }
+          $bin = Split-Path $svnExe
+          Add-Content $env:GITHUB_PATH $bin
+          Write-Host "svn resolved to: $svnExe"
 
       - name: Fetch Blender Windows precompiled libs
         shell: bash
