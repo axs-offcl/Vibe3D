@@ -36,10 +36,18 @@ for the Windows-first build.
 
 ## Splash screen
 
-`release/datafiles/splash.png` — replace with Vibe3D art via
-`--splash vibe/splash.png`. The version label in `wm_splash_screen.c`
-reads `BKE_blender_version_string()` (`v2.83.20`); leave as-is until we
-decide Vibe3D versioning.
+`release/datafiles/splash.png` — installed from `vibe/splash.png`
+(1000×500 RGBA placeholder; regenerate with `python vibe/make-placeholders.py`).
+Swap in final art later under the same filename — zero pipeline changes.
+The version label in `wm_splash_screen.c` reads `BKE_blender_version_string()`
+(`v2.83.20`); leave as-is until we decide Vibe3D versioning.
+
+## Windows icons
+
+`release/windows/icons/winblender.ico` (app) + `winblenderfile.ico` (.blend
+association) — installed from `vibe/icons/` placeholders (multi-size
+16/32/48/256). Same filenames as upstream, so `winblender.rc` needs no edit;
+swap in final `.ico` files later under the same names.
 
 ## Deliberately NOT touched (Phase 2+)
 

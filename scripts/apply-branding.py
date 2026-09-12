@@ -2,10 +2,12 @@
 """Vibe3D branding patch — renames "Blender" to "Vibe3D" in a Blender 2.83 tree.
 
 Usage:
-    python scripts/apply-branding.py [--source-dir source] [--splash vibe/splash.png]
+    python scripts/apply-branding.py [--source-dir source]
+        [--splash vibe/splash.png] [--icons-dir vibe/icons]
 
 Idempotent: safe to re-run. Exits nonzero if an expected anchor is missing
 (upstream drift) or if a "Blender" title string survives in a touched file.
+Splash + icons install automatically when the default vibe/ art exists.
 
 What it changes (see docs/BRANDING.md for the full map):
   1. Window titles  -> "Vibe3D" (+ filename when a .blend is open)
@@ -72,6 +74,10 @@ EXE_INSERT = (
 )
 EXE_FILE = "source/creator/CMakeLists.txt"
 SPLASH_DST = "release/datafiles/splash.png"
+ICON_DSTS = {
+    "winblender.ico": "release/windows/icons/winblender.ico",
+    "winblenderfile.ico": "release/windows/icons/winblenderfile.ico",
+}
 
 
 def edit_text(root: Path, rel: str, old: str, new: str, replace_all: bool) -> str:
@@ -102,7 +108,10 @@ def rename_exe(root: Path) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Apply Vibe3D branding to Blender source.")
     ap.add_argument("--source-dir", default="source")
-    ap.add_argument("--splash", default=None, help="PNG to install as splash screen")
+    ap.add_argument("--splash", default="vibe/splash.png",
+                    help="PNG to install as splash screen ('none' to skip)")
+    ap.add_argument("--icons-dir", default="vibe/icons",
+                    help="dir of .ico files to install ('none' to skip)")
     args = ap.parse_args()
     root = Path(args.source_dir)
 
@@ -114,13 +123,31 @@ def main() -> int:
             failures += 1
     print(rename_exe(root))
 
-    if args.splash:
-        dst = root / SPLASH_DST
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(args.splash, dst)
-        print(f"splash installed: {SPLASH_DST}")
+    if args.splash and args.splash != "none":
+        src = Path(args.splash)
+        if src.exists():
+            dst = root / SPLASH_DST
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dst)
+            print(f"splash installed: {SPLASH_DST}")
+        else:
+            print(f"note: splash art missing at {src}, upstream splash kept")
     else:
-        print(f"note: splash untouched (pass --splash <png> to replace {SPLASH_DST})")
+        print("note: splash skipped")
+
+    if args.icons_dir and args.icons_dir != "none":
+        icons = Path(args.icons_dir)
+        for name, rel in ICON_DSTS.items():
+            src = icons / name
+            if src.exists():
+                dst = root / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, dst)
+                print(f"icon installed: {rel}")
+            else:
+                print(f"note: icon missing at {src}, upstream icon kept")
+    else:
+        print("note: icons skipped")
 
     # Sweep: no "Blender" title string may survive in the touched files.
     touched = {rel for rel, _, _, _ in TEXT_EDITS}
