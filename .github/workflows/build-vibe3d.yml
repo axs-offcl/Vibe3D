@@ -28,6 +28,10 @@ jobs:
             git -C source log -1 --format='%H %d %s'
           fi
 
+      - name: Install Subversion
+        shell: pwsh
+        run: choco install subversion -y
+
       - name: Fetch Blender Windows precompiled libs
         shell: bash
         run: |
