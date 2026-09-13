@@ -1,0 +1,83 @@
+name: SVN probe (diagnostic)
+
+# Diagnoses runner-side access to svn.blender.org for the win64_vc15 fetch.
+# Emits every probe result as ::error:: annotations so the outcome is
+# visible via the checks API without authenticated log access.
+# Delete once the libs fetch strategy is settled.
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/ci-probe.yml']
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Vibe3D repo
+        uses: actions/checkout@v4
+
+      - name: Install Subversion (portable)
+        shell: pwsh
+        run: |
+          $zip = "$env:TEMP\svn.zip"
+          Invoke-WebRequest -Uri "https://www.visualsvn.com/files/Apache-Subversion-1.14.5.zip" -OutFile $zip
+          if ($LASTEXITCODE -or -not (Test-Path $zip)) { echo "::error::zip download failed" }
+          $size = (Get-Item $zip).Length
+          echo "zip size: $size"
+          if ($size -lt 1000000) { echo "::error::zip suspiciously small (HTTP error page?)" }
+          Expand-Archive -Path $zip -DestinationPath "$env:USERPROFILE\svn" -Force
+          Add-Content $env:GITHUB_PATH "$env:USERPROFILE\svn\bin"
+
+      - name: Probe 1 — plain HTTPS HEAD (no svn)
+        shell: bash
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15/)
+          echo "HTTP $code"
+          if [ "$code" != "200" ]; then echo "::error::plain HTTPS to svn.blender.org returned $code"; fi
+
+      - name: Probe 2 — svn on PATH? svn info (DEPTH infinity)
+        shell: bash
+        run: |
+          echo "which svn: $(which svn 2>&1 || echo NOT-FOUND)"
+          svn --version -q 2>&1 || echo "::error::svn not runnable on PATH"
+          out=$(svn info --non-interactive https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15 2>&1)
+          rc=$?
+          echo "$out" | head -20
+          if [ $rc -ne 0 ]; then echo "::error::svn info failed rc=$rc :: $(echo "$out" | tail -3 | tr '\n' ' ')"; fi
+
+      - name: Probe 2b — svn.exe by absolute path (PATH-independent)
+        shell: bash
+        run: |
+          "$USERPROFILE/svn/bin/svn.exe" --version -q 2>&1 \
+            || echo "::error::svn.exe fails even by absolute path (loader/DLL problem?)"
+
+      - name: Probe 3 — svn checkout r62700 of python/37 only (small subtree, ~100 MB)
+        shell: bash
+        run: |
+          out=$(svn checkout -q --non-interactive -r 62700 \
+            https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15/python/37 \
+            probe_py37 2>&1)
+          rc=$?
+          echo "$out" | head -20
+          if [ $rc -ne 0 ]; then
+            echo "::error::svn checkout python/37 failed rc=$rc :: $(echo "$out" | tail -3 | tr '\n' ' ')"
+          else
+            echo "checkout OK: $(du -sh probe_py37 | cut -f1)"
+          fi
+
+      - name: Probe 4 — svn checkout r62700 full win64_vc15 (the real thing, 15 min cap)
+        shell: bash
+        run: |
+          out=$(svn checkout -q --non-interactive -r 62700 \
+            https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15 \
+            win64_vc15 2>&1)
+          rc=$?
+          echo "$out" | head -20
+          if [ $rc -ne 0 ]; then
+            echo "::error::svn checkout full failed rc=$rc :: $(echo "$out" | tail -3 | tr '\n' ' ')"
+          else
+            echo "checkout OK: $(du -sh win64_vc15 | cut -f1)"
+          fi
