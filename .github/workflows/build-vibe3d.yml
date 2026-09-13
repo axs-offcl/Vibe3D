@@ -38,17 +38,35 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath "$env:USERPROFILE\svn" -Force
           Add-Content $env:GITHUB_PATH "$env:USERPROFILE\svn\bin"
 
+      # Cache the pinned libs tree so we don't pay the 20-min checkout every run.
+      - name: Cache Blender Windows libs (r62700)
+        uses: actions/cache@v4
+        with:
+          path: lib/win64_vc15
+          key: win64-vc15-r62700
+
       - name: Fetch Blender Windows precompiled libs
         shell: bash
         run: |
           # Blender 2.83 expects a lib/ dir next to the source dir.
+          # Pin to r62700 — last revision where python/37 (Python 3.7) still
+          # existed; trunk later moved 37 -> 39 -> 311, breaking 2.83's
+          # hard requirement for 3.7 (python/37/include/Python.h).
+          # svn.blender.org rate-limits (HTTP 429), so retry with backoff.
           if [ ! -d lib/win64_vc15 ]; then
-                      # Pin to r62700 — last revision where python/37 still existed.
-                      # Trunk later moved to python/39 then python/311, which breaks
-                      # Blender 2.83's hard requirement for Python 3.7.
-                      svn checkout --non-interactive -r 62700 https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15 lib/win64_vc15
+            for attempt in 1 2 3 4 5; do
+              echo "=== svn checkout attempt $attempt/5 (r62700) ==="
+              svn checkout -q --non-interactive -r 62700 \
+                https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15 \
+                lib/win64_vc15 && { echo "Checkout OK"; break; }
+              rc=$?
+              echo "attempt $attempt failed (exit $rc) — cleaning partial tree, backing off"
+              rm -rf lib/win64_vc15
+              sleep $((attempt * 30))
+            done
+            [ -d lib/win64_vc15/.svn ] || { echo "::error::svn checkout failed after 5 attempts"; exit 1; }
           else
-            echo "Windows libs already present."
+            echo "Windows libs already present (cache restore or prior checkout)."
           fi
 
       - name: Set up MSVC environment
