@@ -19,6 +19,12 @@ Fixes:
      every instance is an error. Source-level casts cannot cover usage sites
      (run #22 errored in bmesh_operators.c even with the CD_FAKE definition
      cast), so the warning class is silenced compiler-wide.
+  3. lib-side: OIIO's vendored fmt/format.h guards checked iterators with
+     `#ifdef _SECURE_SCL` — true if the macro is defined AT ALL, and the
+     14.5x STL defines it to 0 as a compat shim. The dead branch references
+     stdext::checked_array_iterator, which modern STL removed (run #23a2:
+     C2653 + ~15 cascade errors in every OIIO TU). Rewritten to a
+     value-aware #if so the branch stays dead.
 """
 
 import argparse
@@ -51,6 +57,31 @@ TEXT_PATCHES = [
     ),
 ]
 
+# Lib-side patch (outside source/): OIIO's vendored fmt header. Lives in
+# lib/win64_vc15, restored fresh from cache on every run, so the patch is
+# re-applied after cache restore, before configure.
+LIB_FMT_REL = Path("lib") / "win64_vc15" / "OpenImageIO" / "include" / "OpenImageIO" / "fmt" / "format.h"
+FMT_SECURE_SCL_OLD = "#ifdef _SECURE_SCL"
+FMT_SECURE_SCL_NEW = "#if defined(_SECURE_SCL) && _SECURE_SCL"
+
+
+def patch_lib_fmt(root: Path) -> str:
+    """fmt (2010-era) gates checked iterators on #ifdef _SECURE_SCL; the
+    14.5x STL defines it to 0 as a compat shim, making the #ifdef TRUE and
+    activating a stdext::checked_array_iterator branch that no longer
+    exists. Value-aware #if keeps the branch dead."""
+    p = root / LIB_FMT_REL
+    if not p.exists():
+        return f"MISSING FILE: {p}"
+    text = p.read_text(encoding="utf-8", errors="replace")
+    if FMT_SECURE_SCL_NEW in text:
+        return "already patched: OIIO fmt _SECURE_SCL value-aware guard"
+    if FMT_SECURE_SCL_OLD not in text:
+        return f"ANCHOR NOT FOUND in {p}: {FMT_SECURE_SCL_OLD!r}"
+    text = text.replace(FMT_SECURE_SCL_OLD, FMT_SECURE_SCL_NEW, 1)
+    p.write_text(text, encoding="utf-8", newline="")
+    return "patched: OIIO fmt _SECURE_SCL value-aware guard"
+
 
 def apply_text_patches(root: Path):
     results = []
@@ -81,6 +112,7 @@ def main() -> int:
     root = Path(args.source_dir)
 
     results = apply_text_patches(root)
+    results.append(patch_lib_fmt(Path(".")))  # lib/ sits next to source/ at repo root
     for r in results:
         print(r)
     fail = [r for r in results if r.startswith(("MISSING", "ANCHOR"))]

@@ -117,8 +117,9 @@ jobs:
         run: |
           python scripts/apply-branding.py --source-dir source
 
-      # 2.83-era sources vs. the runner's modern MSVC: fixes C5287
-      # (enum-flag OR under /WX) and future era-gap issues.
+      # 2.83-era sources/libs vs. the runner's modern MSVC: audaspace
+      # <string> includes, /wd5287 flag injection, OIIO vendored-fmt
+      # _SECURE_SCL guard (lib-side, re-applied after every cache restore).
       # Idempotent; fails loudly if an upstream anchor goes missing.
       - name: Apply MSVC era-gap patches
         shell: bash
