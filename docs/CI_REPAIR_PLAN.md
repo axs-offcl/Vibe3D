@@ -34,10 +34,13 @@ win64_vc15 path → SVN 429 rate limits). Everything below was probed live on
 2. ✅ **DONE** — `apply-msvc-patches.py` committed and wired in right after
    branding: `python scripts/apply-msvc-patches.py --source-dir source`
    (idempotent, fails loudly on upstream drift).
-3. ✅ **DONE** — svn fetch, final design (after 3 diagnoses):
-   peg-revision URL (`win64_vc15@62700`), `svn cleanup` +
-   `svn checkout --force` resume rounds, success gated on sentinel files
-   on disk, runs serialized via a concurrency group. See "Run history".
+3. ✅ **DONE** — svn fetch v3 (`scripts/fetch-win64-libs.sh`):
+   per-subtree fetch of only the ~23 dirs the stripped build references
+   (skips llvm/osl/OpenImageDenoise/embree/usd/alembic/opencollada/
+   openvdb/blosc/nanovdb/shaderc/vulkan/hidapi/potrace/haru/zstd —
+   ~6 GB of dead weight incl. the llvm/debug 429 magnet), peg-revision
+   URLs, `svn cleanup` + `svn checkout --force` resume rounds,
+   sentinel-gated success, concurrency-serialized runs. See "Run history".
 4. ✅ **DONE** — pre-flight diagnostics step (disk free, toolchain versions)
    and configure-failure log dump (CMakeError.log / configure log tails).
 5. ⏳ **IN PROGRESS** — next unknown is the compile itself: MSVC-2022/2026
