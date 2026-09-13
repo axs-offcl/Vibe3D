@@ -54,30 +54,55 @@ jobs:
           "$USERPROFILE/svn/bin/svn.exe" --version -q 2>&1 \
             || echo "::error::svn.exe fails even by absolute path (loader/DLL problem?)"
 
-      - name: Probe 3 — svn checkout r62700 of python/37 only (small subtree, ~100 MB)
+      # NOTE: peg revision (@62700) is REQUIRED — plain -r 62700 resolves
+      # paths against HEAD (r63701) where python/37 no longer exists
+      # (E160013 path not found, fails in ~1 s). Verified locally 2026-09-13.
+      - name: Probe 3 — svn checkout python/37@62700 (peg syntax, ~140 MB)
         shell: bash
         run: |
-          out=$(svn checkout -q --non-interactive -r 62700 \
-            https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15/python/37 \
-            probe_py37 2>&1)
-          rc=$?
-          echo "$out" | head -20
-          if [ $rc -ne 0 ]; then
-            echo "::error::svn checkout python/37 failed rc=$rc :: $(echo "$out" | tail -3 | tr '\n' ' ')"
-          else
+          URL="https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15/python/37@62700"
+          if out=$(svn checkout -q --non-interactive -r 62700 "$URL" probe_py37 2>&1); then
             echo "checkout OK: $(du -sh probe_py37 | cut -f1)"
+          else
+            rc=$?
+            echo "$out" | tail -5
+            echo "::error::svn checkout python/37@62700 failed rc=$rc :: $(echo "$out" | tail -3 | tr '\n' ' ')"
           fi
 
-      - name: Probe 4 — svn checkout r62700 full win64_vc15 (the real thing, 15 min cap)
+      # Cloudflare 429s cut long transfers mid-flight (verified locally:
+      # ~140 MB bursts then E175002). SVN can RESUME an interrupted checkout:
+      # repeating `svn update` in the same wc continues fetching. Measure how
+      # many rounds the full win64_vc15 fetch needs on a runner.
+      - name: Probe 4 — resumable full checkout win64_vc15@62700 (~22 min budget)
         shell: bash
         run: |
-          out=$(svn checkout -q --non-interactive -r 62700 \
-            https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15 \
-            win64_vc15 2>&1)
-          rc=$?
-          echo "$out" | head -20
-          if [ $rc -ne 0 ]; then
-            echo "::error::svn checkout full failed rc=$rc :: $(echo "$out" | tail -3 | tr '\n' ' ')"
+          URL="https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15@62700"
+          round=0
+          complete=""
+          while [ $round -lt 12 ]; do
+            round=$((round+1))
+            if [ ! -d win64_vc15/.svn ]; then
+              echo "--- round $round: initial checkout ---"
+              if out=$(svn checkout -q --non-interactive -r 62700 "$URL" win64_vc15 2>&1); then
+                complete=1; echo "round $round: checkout finished clean"; break
+              fi
+            else
+              echo "--- round $round: resuming via svn update ---"
+              svn cleanup win64_vc15 2>/dev/null || true
+              if out=$(svn update -q --non-interactive -r 62700 win64_vc15 2>&1); then
+                complete=1; echo "round $round: update finished clean"; break
+              fi
+            fi
+            rc=$?
+            echo "round $round interrupted (rc=$rc): $(echo "$out" | tail -2 | tr '\n' ' ')"
+            echo "progress: $(du -sh win64_vc15 2>/dev/null | cut -f1)"
+            svn info win64_vc15 2>/dev/null | grep -E 'Revision|URL' || true
+            sleep $((30 + RANDOM % 30))
+          done
+          echo "rounds used: $round"
+          echo "final size: $(du -sh win64_vc15 2>/dev/null | cut -f1)"
+          if [ -z "$complete" ]; then
+            echo "::warning::full checkout incomplete after $round rounds (see sizes above)"
           else
-            echo "checkout OK: $(du -sh win64_vc15 | cut -f1)"
+            echo "::notice::full checkout COMPLETE in $round rounds: $(du -sh win64_vc15 | cut -f1)"
           fi
