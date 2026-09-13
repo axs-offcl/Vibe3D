@@ -64,12 +64,31 @@ win64_vc15 path → SVN 429 rate limits). Everything below was probed live on
 - Cloudflare-fronted; cuts transfers with HTTP 429 after roughly
   100–150 MB bursts (residential IP) or near-instantly (Azure runner IPs
   shared with other tenants).
-- A single patient client CAN pull the full 8 GB tree: probe #2 did it in
-  one ~21-minute round. Keep rounds solo, keep them resumable.
+- **IP lottery model** (runs #2/#19/#20 evidence): a fresh runner IP can
+  pull the full 8 GB in one ~21-minute sitting (probe #2); a burned one
+  gets ~20 MB and then instant 429s for many minutes — 30–60 s backoffs
+  never lifted it (#19/#20).
 - `svn update` on an interrupted checkout can return success while files
   are missing. `svn checkout --force` re-run in the same wc is faithful:
   existing files kept, missing re-fetched (verified locally: 142→196 MB
   resume of python/37).
+
+## Completion runbook (if the fetch keeps failing)
+
+The fetch is now a lottery ticket + compounding bank (rolling cache):
+
+1. Each attempt banks its partial tree (`win64-vc15-r62700-<run>` keys,
+   saved `if: always()`), and re-attempts resume from the newest one.
+2. Subtrees are ordered big-first, so even ~20 MB-budget attempts bank
+   the most valuable bytes first.
+3. A burned IP fails fast (~8 min) with exit 2 and a clear "re-run me"
+   error — **re-run the failed job** (`Re-run failed jobs` on the run
+   page, or push anything to main) until an attempt lands a fresh IP
+   with real budget. Probe #2 shows one lucky IP finishes the whole
+   remaining fetch in a single pass.
+4. Worst case, ~10 attempts compound the ~2 GB selective set at
+   ~50 MB/run — tedious but converging. The 7 small subtrees are
+   already banked as of run #20.
 
 ## Risks / caveats
 
