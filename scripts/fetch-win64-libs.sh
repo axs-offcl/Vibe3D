@@ -78,9 +78,10 @@ fetch_subtree() {
 main() {
   command -v svn >/dev/null 2>&1 || { echo "::error::svn not on PATH"; exit 1; }
   mkdir -p "$DEST"
-  local failures=() item pass max_passes=12
+  local failures=() item pass max_passes=6 zero_progress=0 prev_size next_size
+  prev_size=$(du -sk "$DEST" 2>/dev/null | cut -f1); prev_size=${prev_size:-0}
   for pass in $(seq 1 $max_passes); do
-    echo "=== pass $pass/$max_passes ==="
+    echo "=== pass $pass/$max_passes (tree so far: $((prev_size / 1024)) MB) ==="
     failures=()
     for item in "${SUBTREES[@]}"; do
       set -- $item
@@ -90,12 +91,30 @@ main() {
       echo "ALL SUBTREES COMPLETE ($(du -sh "$DEST" | cut -f1))"
       exit 0
     fi
-    local backoff=$((20 + RANDOM % 40))
-    echo "pass $pass: waiting on: ${failures[*]} — backing off ${backoff}s"
+    next_size=$(du -sk "$DEST" 2>/dev/null | cut -f1); next_size=${next_size:-0}
+    local grew=$((next_size - prev_size))
+    prev_size=$next_size
+    if [ "$grew" -lt 5120 ]; then
+      # <5 MB this pass and nothing completed: the runner IP is likely
+      # burned (Cloudflare penalty windows on Azure IPs last many minutes
+      # — more passes here are wasted minutes). Exit fast so a job re-run
+      # can draw a fresh IP; partial progress is preserved by the
+      # rolling-key cache save in the workflow.
+      zero_progress=$((zero_progress + 1))
+    else
+      zero_progress=0
+    fi
+    if [ "$zero_progress" -ge 2 ]; then
+      echo "::error::runner IP appears rate-limit burned (2 passes, no progress). Re-run the failed job to draw a fresh runner — partial libs ($((prev_size / 1024)) MB) were cached and will be resumed."
+      exit 2
+    fi
+    local backoff=$((45 + RANDOM % 30))
+    echo "pass $pass: +$((grew / 1024)) MB; waiting on: ${failures[*]} — backing off ${backoff}s"
     sleep "$backoff"
   done
   echo "::error::subtrees still incomplete after $max_passes passes: ${failures[*]}"
-  exit 1
+  echo "::error::partial libs ($((prev_size / 1024)) MB) were cached; re-run to resume."
+  exit 2
 }
 
 main

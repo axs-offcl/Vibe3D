@@ -53,12 +53,16 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath "$env:USERPROFILE\svn" -Force
           Add-Content $env:GITHUB_PATH "$env:USERPROFILE\svn\bin"
 
-      # Cache the pinned libs tree so we don't pay the 20-min checkout every run.
-      - name: Cache Blender Windows libs (r62700)
-        uses: actions/cache@v4
+      # Rolling partial-progress cache: restores the most recent libs tree
+      # (even a partial one from a failed run) so each attempt resumes
+      # instead of restarting the svn fetch from zero.
+      - name: Restore libs cache (rolling)
+        uses: actions/cache/restore@v4
         with:
           path: lib/win64_vc15
           key: win64-vc15-r62700
+          restore-keys: |
+            win64-vc15-r62700-
 
       - name: Fetch Blender Windows precompiled libs
         shell: bash
@@ -71,7 +75,22 @@ jobs:
           # 3. llvm/ + osl/ + OpenImageDenoise/ + embree/ (~6G, incl. the
           #    llvm/debug 429 magnet) are skipped: WITH_CYCLES=OFF never
           #    references them.
+          # 4. Azure runner IPs are a lottery: a fresh IP can pull 8G in one
+          #    sitting (probe #2), a burned one gets instant 429s for many
+          #    minutes (runs #19). This script fails FAST on a burned IP so
+          #    the job re-run draws a fresh one.
           bash scripts/fetch-win64-libs.sh lib
+
+      # Save whatever we have — including a partial tree from a failed
+      # fetch — under a unique rolling key. restore-keys above picks the
+      # newest one next run. (actions/cache only saves on success, which is
+      # exactly what a partial-progress strategy must NOT do.)
+      - name: Save libs cache (rolling, always)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: lib/win64_vc15
+          key: win64-vc15-r62700-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
