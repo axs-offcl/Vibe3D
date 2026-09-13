@@ -42,8 +42,8 @@ jobs:
         shell: bash
         run: |
           # Blender 2.83 expects a lib/ dir next to the source dir.
-          if [ ! -d lib/windows64_vc15 ]; then
-            svn checkout --non-interactive https://svn.blender.org/svnroot/bf-blender/trunk/lib/windows64_vc15 lib/windows64_vc15
+          if [ ! -d lib/win64_vc15 ]; then
+                      svn checkout --non-interactive https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15 lib/win64_vc15
           else
             echo "Windows libs already present."
           fi
