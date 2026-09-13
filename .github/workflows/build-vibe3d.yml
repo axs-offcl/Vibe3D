@@ -43,7 +43,10 @@ jobs:
         run: |
           # Blender 2.83 expects a lib/ dir next to the source dir.
           if [ ! -d lib/win64_vc15 ]; then
-                      svn checkout --non-interactive https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15 lib/win64_vc15
+                      # Pin to r62700 — last revision where python/37 still existed.
+                      # Trunk later moved to python/39 then python/311, which breaks
+                      # Blender 2.83's hard requirement for Python 3.7.
+                      svn checkout --non-interactive -r 62700 https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15 lib/win64_vc15
           else
             echo "Windows libs already present."
           fi
