@@ -19,6 +19,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Serialize builds: parallel runs stampede svn.blender.org's rate limit and
+# chop each other into 429-interrupted rounds (seen across runs #13-#16).
+concurrency:
+  group: build-vibe3d-windows
+  cancel-in-progress: false
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -59,45 +65,52 @@ jobs:
         run: |
           # Blender 2.83 expects a lib/ dir next to the source dir.
           # Pin to r62700 — last revision where python/37 (Python 3.7) still
-          # existed; trunk later moved 37 -> 39 -> 311, breaking 2.83's
-          # hard requirement for 3.7 (python/37/include/Python.h).
+          # existed (HEAD only has 311; platform_win32.cmake hardcodes 3.7).
           #
-          # Peg revision (@62700) is REQUIRED: with a plain URL and -r 62700,
-          # subpaths missing at HEAD (python/37) fail instantly with E160013.
-          #
-          # Cloudflare fronts svn.blender.org and cuts long transfers with
-          # 429 mid-flight, so an interrupted checkout is RESUMED via
-          # `svn update` in the same working copy instead of restarted.
-          if [ ! -d lib/win64_vc15 ]; then
-            URL="https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15@62700"
-            ok=""
-            for round in $(seq 1 15); do
-              if [ ! -d lib/win64_vc15/.svn ]; then
-                echo "=== round $round: initial checkout (r62700) ==="
-                if out=$(svn checkout -q --non-interactive -r 62700 "$URL" lib/win64_vc15 2>&1); then
-                  ok=1; echo "round $round: checkout finished clean"; break
-                fi
-              else
-                echo "=== round $round: resuming via svn update ==="
-                svn cleanup lib/win64_vc15 2>/dev/null || true
-                if out=$(svn update -q --non-interactive -r 62700 lib/win64_vc15 2>&1); then
-                  ok=1; echo "round $round: update finished clean"; break
-                fi
-              fi
-              rc=$?
-              backoff=$((30 + RANDOM % 60))
-              echo "round $round interrupted (rc=$rc): $(echo "$out" | tail -2 | tr '\n' ' ')"
-              echo "progress: $(du -sh lib/win64_vc15 2>/dev/null | cut -f1) — backing off ${backoff}s"
-              sleep "$backoff"
-            done
-            if [ -z "$ok" ] && [ ! -d lib/win64_vc15/.svn ]; then
-              echo "::error::svn fetch of win64_vc15 (r62700) did not complete after $round rounds"
-              exit 1
+          # Hard-won lessons (see docs/CI_REPAIR_PLAN.md):
+          # 1. Peg revision (@62700) is REQUIRED — a plain URL with -r 62700
+          #    resolves paths against HEAD, where python/37 is gone
+          #    (instant E160013, run #13/#14 signature).
+          # 2. svn's exit code lies about completeness: run #16 "finished"
+          #    at 3.4G/8G after 429 interruptions. So each round is
+          #    `svn cleanup` + `svn checkout --force` (re-entrant: existing
+          #    files are kept, missing ones re-fetched) and success is
+          #    declared ONLY when sentinel files exist on disk.
+          # 3. A solo run downloads all 8G in one clean ~21-min round
+          #    (probe #2); the concurrency group above makes rounds solo.
+          URL="https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15@62700"
+          SENTINELS="python/37/include/Python.h python/37/libs/python37.lib llvm/lib/LLVMCore.lib boost/include/boost/version.hpp"
+          complete=""
+          for round in $(seq 1 10); do
+            echo "=== round $round: cleanup + checkout --force (r62700) ==="
+            svn cleanup lib/win64_vc15 2>/dev/null || true
+            if command -v timeout >/dev/null 2>&1; then
+              out=$(timeout 1500 svn checkout -q --non-interactive -r 62700 --force \
+                "$URL" lib/win64_vc15 2>&1) || echo "$out" | tail -2
+            else
+              out=$(svn checkout -q --non-interactive -r 62700 --force \
+                "$URL" lib/win64_vc15 2>&1) || echo "$out" | tail -2
             fi
-            echo "libs fetched: $(du -sh lib/win64_vc15 | cut -f1)"
-          else
-            echo "Windows libs already present (cache restore or prior checkout)."
+            missing=""
+            for s in $SENTINELS; do
+              [ -f "lib/win64_vc15/$s" ] || missing="$missing $s"
+            done
+            if [ -z "$missing" ]; then
+              complete=1
+              echo "round $round: all sentinels present — fetch complete"
+              break
+            fi
+            echo "round $round incomplete; missing:$missing"
+            echo "progress: $(du -sh lib/win64_vc15 2>/dev/null | cut -f1)"
+            backoff=$((30 + RANDOM % 60))
+            echo "backing off ${backoff}s before next round"
+            sleep "$backoff"
+          done
+          if [ -z "$complete" ]; then
+            echo "::error::win64_vc15 fetch incomplete after 10 rounds — sentinels never all present"
+            exit 1
           fi
+          echo "libs fetched: $(du -sh lib/win64_vc15 | cut -f1)"
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
