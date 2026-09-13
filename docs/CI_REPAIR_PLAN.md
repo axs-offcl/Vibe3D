@@ -57,7 +57,22 @@ win64_vc15 path → SVN 429 rate limits). Everything below was probed live on
 | probe #1 | ccf9572 | pinpointed cause | HTTPS 200, svn fine, `svn info` OK; checkout died in ~1 s = E160013 peg-revision bug |
 | probe #2 | c906107 | **SUCCESS — 8.0 GB in 1 round (~21 min)** | peg URL fixes E160013; a solo run needs NO resume rounds |
 | #15/#16 | c906107/214cb84 | fetch "completed" at 3.4 GB → configure died on `python/37/include/Python.h` | parallel runs share the 429 budget; `svn update` returned success on an incomplete tree (exit code lies) |
-| #17 | 777fb9f | pending | concurrency serialization + sentinel-gated `checkout --force` resume |
+| #17 | 777fb9f | failed after 9 rounds (377M→1.7G) | resume mechanics work; every 429 landed in llvm/debug — we were pulling ~6 GB of dead weight through the limiter |
+| #18 | 5d45511 | cancelled | docs-only push; would have burned rate budget against #19 |
+| #19 | a91add4 | failed, 7 small subtrees done | selective fetch validated: smalls complete in seconds; boost hit the 429 wall and the IP stayed walled 11 min |
+| #20 | cc7708e | failed fast (8m27s), banked 54 MB | rolling cache works ("Cache saved ... -34777300641-1"); burned-IP fail-fast keeps each attempt cheap |
+| #21 | 8d3a7a0 | failed, 54→110 MB banked | compounding across runs proven end-to-end; fixed 6-pass cap stopped a still-flowing IP |
+| #22 | 5974b30 | fetch+configure PASSED, build died at 10m40s | three era-gap classes, see "Compile-era error classes" below |
+| #23 | 16c55d0 | pending | r62438 era-correct libs + audaspace <string> + /wd5287 |
+
+## Compile-era error classes (run #22, first real compile)
+
+| Class | Evidence | Fix |
+|---|---|---|
+| OCIO API era mismatch | `ocio_impl.cc`: `applyRGB`/`getGpuShaderText` not a member, float→double, `DisplayTransformRcPtr` gone | r62700 libs are 3.0-era (OCIO v2). Re-pinned to **r62438** = tree as of 2.83 release day (2020-06-09): OCIO v1 API + python/37, all 22 sentinels verified |
+| Missing `<string>` | 150+ audaspace errors, root `C2039 'string': is not a member of 'std'` in `DeviceManager.h(46)` | 14.5x STL no longer drags `<string>` in via `<unordered_map>`; patch script adds `#include <string>` to the two audaspace headers |
+| C5287 under /WX | `BKE_customdata.h(496)` (usage!) and `bmesh_operators.c(311)` despite definition-level cast | warning class silenced compiler-wide via `/wd5287` injected into `platform_win32.cmake` |
+| pugixml | in 2.83's hardcoded paths only inside `if(WITH_CYCLES_OSL)`; absent at r62438 | removed from fetch table |
 
 ## svn.blender.org rate-limit reality (measured 2026-09-13)
 
@@ -77,7 +92,7 @@ win64_vc15 path → SVN 429 rate limits). Everything below was probed live on
 
 The fetch is now a lottery ticket + compounding bank (rolling cache):
 
-1. Each attempt banks its partial tree (`win64-vc15-r62700-<run>` keys,
+1. Each attempt banks its partial tree (`win64-vc15-r62438-<run>` keys,
    saved `if: always()`), and re-attempts resume from the newest one.
 2. Subtrees are ordered big-first, so even ~20 MB-budget attempts bank
    the most valuable bytes first.
