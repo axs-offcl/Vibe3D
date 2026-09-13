@@ -63,7 +63,35 @@ win64_vc15 path → SVN 429 rate limits). Everything below was probed live on
 | #20 | cc7708e | failed fast (8m27s), banked 54 MB | rolling cache works ("Cache saved ... -34777300641-1"); burned-IP fail-fast keeps each attempt cheap |
 | #21 | 8d3a7a0 | failed, 54→110 MB banked | compounding across runs proven end-to-end; fixed 6-pass cap stopped a still-flowing IP |
 | #22 | 5974b30 | fetch+configure PASSED, build died at 10m40s | three era-gap classes, see "Compile-era error classes" below |
-| #23 | 16c55d0 | pending | r62438 era-correct libs + audaspace <string> + /wd5287 |
+| #23 | 16c55d0 | attempt 1: burned IP (banked); attempt 2: **full r62438 fetch + configure PASS**, build died at ~40 min on 2 LNK2019 | audaspace <string> + OCIO v1 + /wd5287 all confirmed fixed by the compile; remaining: OIIO inline members |
+| #25 | 808fdda | compile 100% CLEAN; link failed on exactly 2 symbols | fmt _SECURE_SCL guard fixed the last C-error class; both LNK2019s verifiably absent from the r62438 import lib (binary grep) |
+| #26 | 1cf9410 | failed in shims step, pre-compile | hand-invoking cl from Git-bash → MSYS path conversion ate /nologo /c /O2 /MD; fix: CMake mini-project |
+| **#27** | **cd96c66** | **SUCCESS — artifact Vibe3D-windows-x64 uploaded** | shims via CMake + /ALTERNATENAME through CMAKE_EXE_LINKER_FLAGS; build ~35 min, total ~17 min on warm cache |
+
+## RESOLVED — first green build (run #27, 2026-09-13)
+
+`Vibe3D-windows-x64` artifact produced by run #27 (commit cd96c66).
+The complete fix stack, in the order it was peeled:
+
+1. **IP-lottery fetch** — selective per-subtree resumable sentinel-gated
+   svn fetch + rolling partial-progress cache + serialized runs. A burned
+   runner IP fails fast and banks its bytes; a fresh IP can pull the
+   whole ~2 GB selective set in one sitting (runs #20→#23a2).
+2. **Era-correct libs r62438** — the tree as of the 2.83 release day:
+   OCIO v1 API, python/37 (r62700 was 3.0-era and unbuildable against
+   2.83's ocio_impl.cc).
+3. **audaspace `<string>` includes** — 14.5x STL stopped transitively
+   providing it via `<unordered_map>` (patch script).
+4. **/wd5287** via platform_win32.cmake — mixed-enum flag ORs are a
+   class, not a site (patch script).
+5. **OIIO vendored fmt `_SECURE_SCL` value-aware guard** — the STL
+   defines it to 0 as a shim but `#ifdef` treats defined-as-0 as TRUE
+   (patch script, lib-side, re-applied after every cache restore).
+6. **OIIO link shims** — two dllimport inline members (string_view
+   default ctor, TypeDesc::is_array) are absent from the 2020 DLL;
+   VS2019 always inlined them, MSVC 14.5x emits __imp_ calls.
+   scripts/shims builds hand-written bodies (header-verified layouts)
+   and /ALTERNATENAME routes only-unresolved lookups to them.
 
 ## Compile-era error classes (run #22, first real compile)
 

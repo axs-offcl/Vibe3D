@@ -130,12 +130,13 @@ footer{color:var(--mut);font-size:12px;border-top:1px solid #2a2e36;margin-top:4
 """
 
 ci_body = (
-    '<p>The build reached <b style="color:var(--warn)">first real compile</b> '
-    '(run #22: fetch ✅ 13m35s, configure ✅, 10m40s of compilation before '
-    'dying). Three era-gap classes found and fixed: libs re-pinned '
-    'r62700→<b>r62438</b> (2.83-release-era OCIO v1 + python/37), audaspace '
-    '<code>&lt;string&gt;</code> includes, <code>/wd5287</code> for the '
-    'mixed-enum warning class. Run #23 in flight — full trail: '
+    '<p style="color:var(--ok)"><b>GREEN — run #27 built Vibe3D.exe and '
+    'uploaded the Vibe3D-windows-x64 artifact.</b></p>'
+    '<p>The fix stack, peeled in order: IP-lottery resumable fetch + rolling '
+    'cache → era-correct libs <b>r62438</b> (OCIO v1 + python/37) → '
+    'audaspace <code>&lt;string&gt;</code> → <code>/wd5287</code> → OIIO '
+    'fmt <code>_SECURE_SCL</code> guard → OIIO link shims via '
+    '<code>/ALTERNATENAME</code>. Full trail: '
     '<code>docs/CI_REPAIR_PLAN.md</code>.</p>'
     + list_md(steps, True)
 )
