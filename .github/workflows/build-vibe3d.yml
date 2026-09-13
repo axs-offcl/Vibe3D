@@ -61,30 +61,40 @@ jobs:
           # Pin to r62700 — last revision where python/37 (Python 3.7) still
           # existed; trunk later moved 37 -> 39 -> 311, breaking 2.83's
           # hard requirement for 3.7 (python/37/include/Python.h).
-          # svn.blender.org is Cloudflare-fronted and 429s shared runner IPs,
-          # so retry with jittered exponential backoff (429 windows can
-          # outlast a fixed 30-150 s linear wait).
+          #
+          # Peg revision (@62700) is REQUIRED: with a plain URL and -r 62700,
+          # subpaths missing at HEAD (python/37) fail instantly with E160013.
+          #
+          # Cloudflare fronts svn.blender.org and cuts long transfers with
+          # 429 mid-flight, so an interrupted checkout is RESUMED via
+          # `svn update` in the same working copy instead of restarted.
           if [ ! -d lib/win64_vc15 ]; then
+            URL="https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15@62700"
             ok=""
-            for attempt in 1 2 3 4 5; do
-              echo "=== svn checkout attempt $attempt/5 (r62700) ==="
-              if svn checkout -q --non-interactive -r 62700 \
-                https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15 \
-                lib/win64_vc15; then
-                ok=1
-                echo "Checkout OK"
-                break
+            for round in $(seq 1 15); do
+              if [ ! -d lib/win64_vc15/.svn ]; then
+                echo "=== round $round: initial checkout (r62700) ==="
+                if out=$(svn checkout -q --non-interactive -r 62700 "$URL" lib/win64_vc15 2>&1); then
+                  ok=1; echo "round $round: checkout finished clean"; break
+                fi
+              else
+                echo "=== round $round: resuming via svn update ==="
+                svn cleanup lib/win64_vc15 2>/dev/null || true
+                if out=$(svn update -q --non-interactive -r 62700 lib/win64_vc15 2>&1); then
+                  ok=1; echo "round $round: update finished clean"; break
+                fi
               fi
               rc=$?
-              backoff=$((attempt * 60 + RANDOM % 30))
-              echo "attempt $attempt failed (exit $rc) — cleaning partial tree, retrying in ${backoff}s"
-              rm -rf lib/win64_vc15
+              backoff=$((30 + RANDOM % 60))
+              echo "round $round interrupted (rc=$rc): $(echo "$out" | tail -2 | tr '\n' ' ')"
+              echo "progress: $(du -sh lib/win64_vc15 2>/dev/null | cut -f1) — backing off ${backoff}s"
               sleep "$backoff"
             done
             if [ -z "$ok" ] && [ ! -d lib/win64_vc15/.svn ]; then
-              echo "::error::svn checkout of win64_vc15 (r62700) failed after 5 attempts"
+              echo "::error::svn fetch of win64_vc15 (r62700) did not complete after $round rounds"
               exit 1
             fi
+            echo "libs fetched: $(du -sh lib/win64_vc15 | cut -f1)"
           else
             echo "Windows libs already present (cache restore or prior checkout)."
           fi
