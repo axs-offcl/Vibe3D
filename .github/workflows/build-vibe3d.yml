@@ -3,6 +3,15 @@ name: Build Vibe3D (Windows)
 # Compiles the stripped Blender 2.83 LTS source in source/ into Vibe3D.exe.
 # Feature-stripping flags are the single source of truth for what we cut;
 # keep them in sync with docs/STRIP_LIST.md.
+#
+# Pipeline notes (verified 2026-09-13, see docs/CI_REPAIR_PLAN.md):
+# - apply-branding.py sets OUTPUT_NAME Vibe3D, so the build emits Vibe3D.exe
+#   directly; the final step verifies it (blender.exe fallback kept just in
+#   case branding changes).
+# - apply-msvc-patches.py fixes 2.83-era code for the runner's modern MSVC
+#   (e.g. C5287 in BKE_customdata.h under /WX).
+# - svn.blender.org sits behind Cloudflare and rate-limits shared runner IPs
+#   (HTTP 429); the fetch retries with jittered exponential backoff.
 
 on:
   push:
@@ -52,19 +61,30 @@ jobs:
           # Pin to r62700 — last revision where python/37 (Python 3.7) still
           # existed; trunk later moved 37 -> 39 -> 311, breaking 2.83's
           # hard requirement for 3.7 (python/37/include/Python.h).
-          # svn.blender.org rate-limits (HTTP 429), so retry with backoff.
+          # svn.blender.org is Cloudflare-fronted and 429s shared runner IPs,
+          # so retry with jittered exponential backoff (429 windows can
+          # outlast a fixed 30-150 s linear wait).
           if [ ! -d lib/win64_vc15 ]; then
+            ok=""
             for attempt in 1 2 3 4 5; do
               echo "=== svn checkout attempt $attempt/5 (r62700) ==="
-              svn checkout -q --non-interactive -r 62700 \
+              if svn checkout -q --non-interactive -r 62700 \
                 https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15 \
-                lib/win64_vc15 && { echo "Checkout OK"; break; }
+                lib/win64_vc15; then
+                ok=1
+                echo "Checkout OK"
+                break
+              fi
               rc=$?
-              echo "attempt $attempt failed (exit $rc) — cleaning partial tree, backing off"
+              backoff=$((attempt * 60 + RANDOM % 30))
+              echo "attempt $attempt failed (exit $rc) — cleaning partial tree, retrying in ${backoff}s"
               rm -rf lib/win64_vc15
-              sleep $((attempt * 30))
+              sleep "$backoff"
             done
-            [ -d lib/win64_vc15/.svn ] || { echo "::error::svn checkout failed after 5 attempts"; exit 1; }
+            if [ -z "$ok" ] && [ ! -d lib/win64_vc15/.svn ]; then
+              echo "::error::svn checkout of win64_vc15 (r62700) failed after 5 attempts"
+              exit 1
+            fi
           else
             echo "Windows libs already present (cache restore or prior checkout)."
           fi
@@ -74,10 +94,30 @@ jobs:
         with:
           arch: x64
 
+      - name: Pre-flight diagnostics
+        shell: bash
+        run: |
+          echo "=== disk free ==="
+          df -h . || true
+          echo "=== toolchain ==="
+          which cmake cl python svn || true
+          cmake --version | head -1 || true
+          cl 2>&1 | head -1 || true
+          python --version || true
+          svn --version -q || true
+
       - name: Apply Vibe3D branding
         shell: bash
         run: |
           python scripts/apply-branding.py --source-dir source
+
+      # 2.83-era sources vs. the runner's modern MSVC: fixes C5287
+      # (enum-flag OR under /WX) and future era-gap issues.
+      # Idempotent; fails loudly if an upstream anchor goes missing.
+      - name: Apply MSVC era-gap patches
+        shell: bash
+        run: |
+          python scripts/apply-msvc-patches.py --source-dir source
 
       - name: Configure (stripped feature set)
         shell: bash
@@ -94,20 +134,43 @@ jobs:
             -DWITH_OPENVDB=OFF \
             -DWITH_ALEMBIC=OFF \
             -DWITH_USD=OFF \
-            -DWITH_OPENCOLLADA=OFF
+            -DWITH_OPENCOLLADA=OFF \
+          || {
+            echo "::error::CMake configure failed — dumping available logs"
+            for f in build/CMakeFiles/CMakeError.log \
+                     build/CMakeFiles/CMakeConfigureLog.yaml \
+                     build/CMakeFiles/cmake.configure.log; do
+              if [ -f "$f" ]; then
+                echo "----- $f (last 100 lines) -----"
+                tail -n 100 "$f"
+              fi
+            done
+            exit 1
+          }
 
       - name: Build
         shell: bash
         run: cmake --build build --config Release --parallel
 
-      - name: Rename to Vibe3D.exe
+      # apply-branding.py renames the target output at CMake level, so the
+      # build emits Vibe3D.exe directly. Keep a blender.exe fallback anyway;
+      # fail only if neither artifact exists.
+      - name: Verify Vibe3D.exe
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path build -Recurse -Filter blender.exe | Select-Object -First 1
-          if (-not $exe) { throw "blender.exe not found under build/" }
-          $dest = Join-Path $exe.DirectoryName "Vibe3D.exe"
-          Copy-Item $exe.FullName $dest
-          Write-Host "Vibe3D.exe at $dest"
+          $vibe = Get-ChildItem -Path build -Recurse -Filter Vibe3D.exe | Select-Object -First 1
+          if ($vibe) {
+            Write-Host "OK (branded at build time): $($vibe.FullName)"
+            exit 0
+          }
+          $blender = Get-ChildItem -Path build -Recurse -Filter blender.exe | Select-Object -First 1
+          if ($blender) {
+            $dest = Join-Path $blender.DirectoryName "Vibe3D.exe"
+            Copy-Item $blender.FullName $dest
+            Write-Host "OK (copied from blender.exe fallback): $dest"
+            exit 0
+          }
+          throw "Neither Vibe3D.exe nor blender.exe found under build/"
 
       - name: Upload Vibe3D.exe
         uses: actions/upload-artifact@v4
