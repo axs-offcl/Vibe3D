@@ -34,15 +34,39 @@ win64_vc15 path → SVN 429 rate limits). Everything below was probed live on
 2. ✅ **DONE** — `apply-msvc-patches.py` committed and wired in right after
    branding: `python scripts/apply-msvc-patches.py --source-dir source`
    (idempotent, fails loudly on upstream drift).
-3. ✅ **DONE** — svn fetch hardened: jittered exponential backoff
-   (60·attempt + 0–29 s jitter × 5 attempts). Portable-zip approach,
-   r62700 pin + libs cache kept as-is.
+3. ✅ **DONE** — svn fetch, final design (after 3 diagnoses):
+   peg-revision URL (`win64_vc15@62700`), `svn cleanup` +
+   `svn checkout --force` resume rounds, success gated on sentinel files
+   on disk, runs serialized via a concurrency group. See "Run history".
 4. ✅ **DONE** — pre-flight diagnostics step (disk free, toolchain versions)
    and configure-failure log dump (CMakeError.log / configure log tails).
-5. ⏳ **IN PROGRESS** — pushed; iterating on real CI logs. Remaining risk
-   class is MSVC-2022/2026 compile errors in 2.83 code beyond C5287 — fixes
-   belong in `apply-msvc-patches.py` (its designed role), not toolchain
-   fights.
+5. ⏳ **IN PROGRESS** — next unknown is the compile itself: MSVC-2022/2026
+   era errors in 2.83 code beyond C5287 belong in `apply-msvc-patches.py`
+   (its designed role), not toolchain fights.
+
+## Run history & diagnosis trail
+
+| Run | Commit | Outcome | Lesson |
+|---|---|---|---|
+| #12 and earlier | 8c58c4b↓ | fetch failures | choco svn, wrong paths — pre-diagnosis era |
+| #13 | c316e4b | fetch failed, 5 wasted rounds | jittered backoff alone useless: instant E160013 (peg bug) + partial tree was deleted each round |
+| #14 | ccf9572 | same signature | parallel runs amplified the 429 storm |
+| probe #1 | ccf9572 | pinpointed cause | HTTPS 200, svn fine, `svn info` OK; checkout died in ~1 s = E160013 peg-revision bug |
+| probe #2 | c906107 | **SUCCESS — 8.0 GB in 1 round (~21 min)** | peg URL fixes E160013; a solo run needs NO resume rounds |
+| #15/#16 | c906107/214cb84 | fetch "completed" at 3.4 GB → configure died on `python/37/include/Python.h` | parallel runs share the 429 budget; `svn update` returned success on an incomplete tree (exit code lies) |
+| #17 | 777fb9f | pending | concurrency serialization + sentinel-gated `checkout --force` resume |
+
+## svn.blender.org rate-limit reality (measured 2026-09-13)
+
+- Cloudflare-fronted; cuts transfers with HTTP 429 after roughly
+  100–150 MB bursts (residential IP) or near-instantly (Azure runner IPs
+  shared with other tenants).
+- A single patient client CAN pull the full 8 GB tree: probe #2 did it in
+  one ~21-minute round. Keep rounds solo, keep them resumable.
+- `svn update` on an interrupted checkout can return success while files
+  are missing. `svn checkout --force` re-run in the same wc is faithful:
+  existing files kept, missing re-fetched (verified locally: 142→196 MB
+  resume of python/37).
 
 ## Risks / caveats
 
