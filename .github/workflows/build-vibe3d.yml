@@ -129,9 +129,22 @@ jobs:
       - name: Configure (stripped feature set)
         shell: bash
         run: |
+          # OIIO link shims: compile first (mini CMake project — hand-invoking
+          # cl from Git-bash mangles /flags into MSYS paths, run #26), then
+          # feed the .lib + /ALTERNATENAME flags to the main configure.
+          cmake -S scripts/shims -B build/shims -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 || exit 1
+          cmake --build build/shims --config Release --parallel || exit 1
+          SHIM_LIB="$(pwd -W 2>/dev/null || pwd)/build/shims/Release/oiio_link_shims.lib"
+          test -f "$SHIM_LIB" || { echo "::error::shim lib missing: $SHIM_LIB"; exit 1; }
+          # /ALTERNATENAME is consulted by the linker only when the primary
+          # symbol is unresolved — inert if a future lib exports the real
+          # thing (run #25: OIIO 2.1.15 DLL lacks the two VS2019-always-
+          # inlined dllimport inline members; MSVC 14.5x emits __imp_ calls).
           cmake -S source -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DCMAKE_EXE_LINKER_FLAGS="/ALTERNATENAME:__imp_??0string_view@OpenImageIO_v2_1@@QEAA@XZ=vibe3d_oiio_stringview_default_ctor /ALTERNATENAME:__imp_?is_array@TypeDesc@OpenImageIO_v2_1@@QEBA_NXZ=vibe3d_oiio_typedesc_is_array \"$SHIM_LIB\"" \
             -DWITH_CYCLES=OFF \
             -DWITH_BULLET=OFF \
             -DWITH_MOD_FLUID=OFF \
@@ -157,19 +170,7 @@ jobs:
 
       - name: Build
         shell: bash
-        run: |
-          # /alternatename shims: OIIO 2.1.15 (r62438 DLL) never exported two
-          # dllimport inline members that VS2019 always auto-inlined; MSVC
-          # 14.5x emits real __imp_ calls (run #25: LNK2019 x2). The linker
-          # consults alternatenames only when the primary symbol is
-          # unresolved, so this is inert if a future lib exports them.
-          SHIM_OBJ="$PWD/build/shims/oiio_link_shims.obj"
-          mkdir -p build/shims
-          cl /nologo /c /O2 /MD scripts/oiio_link_shims.cpp \
-             /Fo"$SHIM_OBJ" || exit 1
-          LNK_FLAGS="/ALTERNATENAME:__imp_??0string_view@OpenImageIO_v2_1@@QEAA@XZ=vibe3d_oiio_stringview_default_ctor"
-          LNK_FLAGS="$LNK_FLAGS /ALTERNATENAME:__imp_?is_array@TypeDesc@OpenImageIO_v2_1@@QEBA_NXZ=vibe3d_oiio_typedesc_is_array"
-          cmake --build build --config Release --parallel -- "/p:AdditionalOptions=$LNK_FLAGS $SHIM_OBJ"
+        run: cmake --build build --config Release --parallel
 
       # apply-branding.py renames the target output at CMake level, so the
       # build emits Vibe3D.exe directly. Keep a blender.exe fallback anyway;
