@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Vibe3D — fetch the Blender win64_vc15 precompiled libs (r62700) that the
+# Vibe3D — fetch the Blender win64_vc15 precompiled libs (r62438) that the
 # STRIPPED build actually references, subtree by subtree.
+#
+# Why r62438: the libs tree AS OF the 2.83 release day (2020-06-09). Run #22
+# proved r62700 is 3.0-era libs (OpenColorIO v2 headers: Processor::applyRGB /
+# getGpuShaderText gone, float->double signatures) that 2.83's ocio_impl.cc
+# cannot compile against. r62438 has python/37 AND the OCIO v1 API 2.83
+# expects — both verified by sentinel probes before the switch.
 #
 # Why selective: with Cycles/OSL/OpenVDB/Alembic/USD/OpenCollada/XR disabled,
 # ~6 GB of the 8 GB tree (llvm, osl, OpenImageDenoise, embree, usd, ...) is
@@ -22,13 +28,13 @@ set -u
 LIB_ROOT="${1:-lib}"
 DEST="$LIB_ROOT/win64_vc15"
 BASE="https://svn.blender.org/svnroot/bf-blender/trunk/lib/win64_vc15"
-REV=62700
+REV=62438
 
 # Subtrees referenced by platform_win32.cmake / CMakeLists.txt defaults for
 # the Vibe3D feature set (docs/STRIP_LIST.md). Keep in sync with the CMake
 # flags in .github/workflows/build-vibe3d.yml.
 # Fields: <svn path> <dest dir> <sentinel file>
-# svn paths use the on-disk case at r62700; dest dirs match what cmake
+# svn paths use the on-disk case at r62438; dest dirs match what cmake
 # references (Windows paths are case-insensitive, but stay tidy).
 SUBTREES=(
   "pthreads pthreads include/pthread.h"
@@ -55,8 +61,10 @@ SUBTREES=(
   "fftw3 fftw3 include/fftw3.h"
   "openjpeg openjpeg include/openjpeg-2.3/openjpeg.h"
   "xr_openxr_sdk xr_openxr_sdk include/openxr/openxr.h"
-  "pugixml pugixml include/pugixml.hpp"
   "wintab wintab include/wintab.h"
+  # NOTE: no pugixml — 2.83 only references it inside if(WITH_CYCLES_OSL)
+  # (platform_win32.cmake), dead for the stripped build, and the directory
+  # does not exist at r62438.
 )
 
 fetch_subtree() {

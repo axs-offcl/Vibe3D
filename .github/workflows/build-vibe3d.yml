@@ -9,9 +9,11 @@ name: Build Vibe3D (Windows)
 #   directly; the final step verifies it (blender.exe fallback kept just in
 #   case branding changes).
 # - apply-msvc-patches.py fixes 2.83-era code for the runner's modern MSVC
-#   (e.g. C5287 in BKE_customdata.h under /WX).
+#   (e.g. missing <string> in audaspace headers); /wd5287 silences the
+#   enum-flag warning class C5287 that /WX promotes to errors.
 # - svn.blender.org sits behind Cloudflare and rate-limits shared runner IPs
-#   (HTTP 429); the fetch retries with jittered exponential backoff.
+#   (HTTP 429); fetch-win64-libs.sh is selective, resumable and sentinel-
+#   gated, and the rolling cache compounds partial progress across runs.
 
 on:
   push:
@@ -60,17 +62,18 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: lib/win64_vc15
-          key: win64-vc15-r62700
+          key: win64-vc15-r62438
           restore-keys: |
-            win64-vc15-r62700-
+            win64-vc15-r62438-
 
       - name: Fetch Blender Windows precompiled libs
         shell: bash
         run: |
           # Selective, per-subtree, resumable, sentinel-gated fetch of the
-          # r62700 win64_vc15 libraries the STRIPPED build actually uses.
-          # Rationale and hard-won lessons: docs/CI_REPAIR_PLAN.md —
-          # 1. Peg revision (@62700) required (paths gone at HEAD).
+          # r62438 win64_vc15 libraries (2.83-release-era: OCIO v1 API +
+          # python/37 — see docs/CI_REPAIR_PLAN.md) that the STRIPPED build
+          # actually uses. Hard-won lessons:
+          # 1. Peg revision (@REV) required (paths gone at HEAD).
           # 2. svn's exit code lies; sentinel files on disk decide.
           # 3. llvm/ + osl/ + OpenImageDenoise/ + embree/ (~6G, incl. the
           #    llvm/debug 429 magnet) are skipped: WITH_CYCLES=OFF never
@@ -90,7 +93,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: lib/win64_vc15
-          key: win64-vc15-r62700-${{ github.run_id }}-${{ github.run_attempt }}
+          key: win64-vc15-r62438-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
