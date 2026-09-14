@@ -36,7 +36,7 @@ graph entries) in `scripts/apply-strips.py`, applied in CI before configure.
 Safe by upstream design: an unregistered space type in a saved layout falls
 back to the 3D Viewport (`ED_area_initialize`, editors/screen/area.c).
 
-### Wave 1 — animation editors (active)
+### Wave 1 — animation editors (green: run #31 built + uploaded Vibe3D.exe)
 
 | Module | Anchor removed | Where | Status |
 |---|---|---|---|
