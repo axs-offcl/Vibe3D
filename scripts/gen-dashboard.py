@@ -88,7 +88,7 @@ constraints = between(proj, "## Build constraints", "## Next steps")
 phases = [
     ("1", "CI green", "done", "done", "runs #27-#29 green; rolling libs cache, era-gap patches"),
     ("2", "CMake-level strip", "done", "done", "10 WITH_* flags + NDOF/i18n/OpenSubdiv lightness flags"),
-    ("3", "Source-level strip (waves)", "active", "running", "Wave 1: animation editors (Dope Sheet / Graph / NLA)"),
+    ("3", "Source-level strip (waves)", "active", "Wave 1 in CI", "animation editors stripped: 3 libs + 6 out-of-lib call sites (run #30 link map)"),
     ("4", "Scripting platform UI", "todo", "planned", "floating side panel: add, run, manage script packs (KAM-style)"),
     ("5", "Script packs & ecosystem", "todo", "planned", "pack format + docs; GTA SA pack as the first example"),
 ]

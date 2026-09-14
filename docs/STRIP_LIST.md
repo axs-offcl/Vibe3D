@@ -40,9 +40,19 @@ back to the 3D Viewport (`ED_area_initialize`, editors/screen/area.c).
 
 | Module | Anchor removed | Where | Status |
 |---|---|---|---|
-| Dope Sheet (`space_action`) | `ED_spacetype_action()` + subdir + link dep | spacetypes.c, editors/CMakeLists.txt, space_api/CMakeLists.txt | in CI |
-| Graph editor (`space_graph`) | `ED_spacetype_ipo()` + subdir + link dep | same three files | in CI |
+| Dope Sheet (`space_action`) | `ED_spacetype_action()` + macros + subdir + link dep | spacetypes.c, editors/CMakeLists.txt, space_api/CMakeLists.txt | in CI |
+| Graph editor (`space_graph`) | `ED_spacetype_ipo()` + macros + subdir + link dep | same three files | in CI |
 | NLA (`space_nla`) | `ED_spacetype_nla()` + subdir + link dep | same three files | in CI |
+
+**Out-of-lib call sites** (surfaced by run #30's link errors, fixed same wave):
+
+| Symbol (defined in stripped lib) | Call site | Fix |
+|---|---|---|
+| `ED_drivers_editor_init` | `rna_space.c` (Graph Drivers-mode update) | branch replaced with comment + `(void)sipo;` |
+| `ED_drivers_editor_init` | `screen_ops.c` `SCREEN_OT_drivers_editor_show` | invoke body stubbed; operator stays registered, cancels with an honest warning (keymaps/menus still reference its id) |
+| `ED_operatormacros_action` / `_graph` | `spacetypes.c` `ED_spacemacros_init` | calls removed |
+| `nla_action_get_color` | `anim_channels_defines.c` (2 drawing callbacks) | neutral `zero_v4(color)` fill |
+| `ED_nla_postop_refresh` | `transform_convert.c` NLA branch | call removed (strip re-sorting helper; data stays consistent) |
 
 Note: animation *data* (keyframes, fcurves, constraints) and the Python API
 stay fully intact — only the hand-editing UIs are removed.
