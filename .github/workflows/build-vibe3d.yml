@@ -129,10 +129,12 @@ jobs:
         run: |
           python scripts/apply-msvc-patches.py --source-dir source
 
-      # Phase 3 Wave 1 (see docs/STRIP_LIST.md): remove the animation
-      # editors from the build. Registration calls + CMake entries only;
-      # animation DATA and the Python API stay fully intact.
-      - name: Strip animation editors (Wave 1)
+      # Phase 3 (see docs/STRIP_LIST.md): Wave 1 removes the animation
+      # editors (Dope Sheet / Graph / NLA); Wave 2 removes sculpt/paint, the
+      # sequencer and the clip editor (stub TU satisfies keeper links).
+      # Registration calls + CMake entries only; animation DATA and the
+      # Python API stay fully intact.
+      - name: Strip editor modules (Waves 1+2)
         shell: bash
         run: |
           python scripts/apply-strips.py --source-dir source
@@ -209,8 +211,61 @@ jobs:
           }
           throw "Neither Vibe3D.exe nor blender.exe found under build/"
 
+      # Package a runnable bundle. A plain build populates bin/Release with
+      # ONLY the exe — the 2.83/ data folder comes from install rules that
+      # don't run here. Build it manually instead:
+      #   2.83/scripts, 2.83/datafiles/colormanagement  <- source/release/*
+      #   2.83/python/{bin,lib}                         <- lib/win64_vc15/python/37
+      #   dependency DLLs next to the exe               <- dumpbin /DEPENDENTS,
+      #      copied from lib/win64_vc15 (recursive; system DLLs skipped)
+      # (startup.blend is datatoc-bundled in 2.83 — no file needed.)
+      - name: Package portable bundle
+        shell: bash
+        run: |
+          set -e
+          EXE=$(find build -name Vibe3D.exe | head -1)
+          EXE_DIR=$(dirname "$EXE")
+          echo "bundle root: $EXE_DIR"
+          mkdir -p "$EXE_DIR/2.83/datafiles"
+          cp -r source/release/scripts "$EXE_DIR/2.83/scripts"
+          cp -r source/release/datafiles/colormanagement "$EXE_DIR/2.83/datafiles/colormanagement"
+          cp -r source/release/datafiles/fonts "$EXE_DIR/2.83/datafiles/fonts"
+          if [ -d lib/win64_vc15/python/37 ]; then
+            mkdir -p "$EXE_DIR/2.83/python"
+            cp -r lib/win64_vc15/python/37/bin "$EXE_DIR/2.83/python/bin"
+            cp -r lib/win64_vc15/python/37/lib "$EXE_DIR/2.83/python/lib"
+          else
+            echo "::warning::lib/win64_vc15/python/37 missing — python bundle incomplete"
+          fi
+          # Dependency DLLs: dumpbin lists the exe's imports; copy whichever
+          # of them exist somewhere under lib/win64_vc15 (system DLLs simply
+          # won't be found there and are skipped).
+          dumpbin //DEPENDENTS "$(cygpath -w "$EXE")" > /tmp/dependents.txt || true
+          grep -oiE "[A-Za-z0-9_.-]+\.dll" /tmp/dependents.txt | sort -u | while read -r dll; do
+            src=$(find lib/win64_vc15 -iname "$dll" -not -path "*/debug/*" | head -1)
+            if [ -n "$src" ]; then
+              cp "$src" "$EXE_DIR/"
+              echo "  bundled dll: $dll <- $src"
+            fi
+          done
+          # Sanity: the bundle must contain the python dll if python was built.
+          test -f "$EXE_DIR/python37.dll" || echo "::warning::python37.dll not bundled"
+          ZIP="$GITHUB_WORKSPACE/Vibe3D-windows-x64-portable.zip"
+          if command -v 7z > /dev/null 2>&1; then
+            (cd "$EXE_DIR" && 7z a -tzip "$(cygpath -w "$ZIP")" Vibe3D.exe 2.83 *.dll > /dev/null)
+          else
+            pwsh -Command "Compress-Archive -Path '$(cygpath -w "$EXE_DIR")\Vibe3D.exe','$(cygpath -w "$EXE_DIR")\2.83' -DestinationPath '$(cygpath -w "$ZIP")' -Force; if (Test-Path '$(cygpath -w "$EXE_DIR")\*.dll') { Compress-Archive -Path '$(cygpath -w "$EXE_DIR")\*.dll' -Update -DestinationPath '$(cygpath -w "$ZIP")' }"
+          fi
+          ls -la "$ZIP"
+
       - name: Upload Vibe3D.exe
         uses: actions/upload-artifact@v4
         with:
           name: Vibe3D-windows-x64
           path: build/**/Vibe3D.exe
+
+      - name: Upload portable bundle (exe + 2.83 data)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vibe3D-windows-x64-portable
+          path: Vibe3D-windows-x64-portable.zip

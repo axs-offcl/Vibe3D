@@ -88,9 +88,9 @@ constraints = between(proj, "## Build constraints", "## Next steps")
 phases = [
     ("1", "CI green", "done", "done", "runs #27-#29 green; rolling libs cache, era-gap patches"),
     ("2", "CMake-level strip", "done", "done", "10 WITH_* flags + NDOF/i18n/OpenSubdiv lightness flags"),
-    ("3", "Source-level strip (waves)", "active", "Wave 1 green (run #31)", "animation editors stripped: 3 libs + 6 out-of-lib call sites; Vibe3D.exe builds + uploads"),
-    ("4", "Scripting platform UI", "todo", "planned", "floating side panel: add, run, manage script packs (KAM-style)"),
-    ("5", "Script packs & ecosystem", "todo", "planned", "pack format + docs; GTA SA pack as the first example"),
+    ("3", "Source-level strip (waves)", "active", "Waves 1+2 pushed", "W1 animation editors green (#31); W2 sculpt/sequencer/clip via auto-stub TU (run #33)"),
+    ("4", "Scripting platform UI", "active", "in design", "floating side panel host — architecture in docs/SCRIPT_HOST_DESIGN.md; Python-driven UI, C core untouched"),
+    ("5", "Script packs & ecosystem", "todo", "format defined", "pack.json + button contract in SCRIPT_HOST_DESIGN.md; packs root = 2.83/scripts/vibe3d_packs"),
 ]
 
 phase_html = "".join(
@@ -131,13 +131,15 @@ footer{color:var(--mut);font-size:12px;border-top:1px solid #2a2e36;margin-top:4
 """
 
 ci_body = (
-    '<p style="color:var(--ok)"><b>GREEN — run #27 built Vibe3D.exe and '
-    'uploaded the Vibe3D-windows-x64 artifact.</b></p>'
+    '<p style="color:var(--ok)"><b>GREEN — runs #27-#32 built Vibe3D.exe and '
+    'uploaded artifacts; run #33 adds the Wave-2 strip + portable bundle.</b></p>'
     '<p>The fix stack, peeled in order: IP-lottery resumable fetch + rolling '
     'cache → era-correct libs <b>r62438</b> (OCIO v1 + python/37) → '
     'audaspace <code>&lt;string&gt;</code> → <code>/wd5287</code> → OIIO '
     'fmt <code>_SECURE_SCL</code> guard → OIIO link shims via '
-    '<code>/ALTERNATENAME</code>. Full trail: '
+    '<code>/ALTERNATENAME</code>. Artifacts: <code>Vibe3D-windows-x64</code> '
+    '(bare exe) and <code>Vibe3D-windows-x64-portable</code> (exe + '
+    '<code>2.83/</code> + DLLs — see docs/LOCAL_TESTING.md). Full trail: '
     '<code>docs/CI_REPAIR_PLAN.md</code>.</p>'
     + list_md(steps, True)
 )

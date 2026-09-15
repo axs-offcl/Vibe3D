@@ -1,19 +1,30 @@
 #!/usr/bin/env python3
-"""Vibe3D Wave-1 source strip: remove the animation editors.
+"""Vibe3D source strips: Wave 1 (animation editors) + Wave 2 (sculpt/seq/clip).
 
-Removes the Dope Sheet (space_action), Graph editor (space_graph) and NLA
-(space_nla) editor libraries from the build. These are leaf editor modules:
-the only seams are (1) registration calls in space_api/spacetypes.c, (2) a
-handful of call sites in still-linked editor libs (run #30's link errors
-enumerated them exactly), and (3) their entries in the editors CMake graph.
-Blender 2.83 upstream degrades gracefully when a saved screen layout
-references an unregistered space type: ED_area_initialize() falls back to
-SPACE_VIEW3D (source/blender/editors/screen/area.c), so existing
+Wave 1 — remove the Dope Sheet (space_action), Graph editor (space_graph) and
+NLA (space_nla) editor libraries. Leaf editor modules: the only seams are (1)
+registration calls in space_api/spacetypes.c, (2) a handful of call sites in
+still-linked editor libs (run #30's link errors enumerated them exactly), and
+(3) their entries in the editors CMake graph. Blender 2.83 upstream degrades
+gracefully when a saved screen layout references an unregistered space type:
+ED_area_initialize() falls back to SPACE_VIEW3D (screen/area.c), so existing
 startup.blend layouts are safe.
 
-Core animation *data* (keyframes on objects, fcurve evaluation, constraints)
-stays untouched — Python scripts keep full animation API access; only the
-hand-editing UIs are gone.
+Wave 2 — remove sculpt/paint (sculpt_paint), sequencer (space_sequencer) and
+movie clip editor (space_clip). These are bigger and referenced from many
+keeper files (~40 keepers reference ~81 externals: mask/ uses the clip API,
+transform/ uses the sculpt hooks, outliner/ and anim_ops the sequencer API).
+Instead of hand-stubbing dozens of call sites, the strip injects a stub
+translation unit (scripts/wave2_stubs.c — prototypes verbatim from upstream
+headers, inert no-op bodies) compiled INTO bf_editor_space_api, and removes
+the Sculpt/PaintCurve undo registrations so BKE_UNDOSYS_TYPE_* stays NULL
+(all readers tolerate that). BKE_* and data-layer code is untouched; the one
+reachable stub caller (sequencer_ibuf_get via the image sample operator)
+NULL-checks its result.
+
+Core data and the Python API stay untouched by both waves — Python scripts
+keep full access to animation, painting and sequencer *data*; only the
+hand-editing UIs/modes are gone.
 
 Idempotent: re-running reports "already stripped" and exits 0.
 Fails nonzero if an expected anchor is missing (upstream drift), so CI
@@ -23,11 +34,16 @@ Usage: python scripts/apply-strips.py [--source-dir source]
 """
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Wave 1
+# ---------------------------------------------------------------------------
+
 # (file, exact line to delete, human label)
-LINE_REMOVALS = [
+W1_LINE_REMOVALS = [
     # 1. Registration calls (spacetypes.c, ED_spacetypes_init)
     ("source/blender/editors/space_api/spacetypes.c",
      "  ED_spacetype_action();\n", "Dope Sheet registration"),
@@ -57,10 +73,7 @@ LINE_REMOVALS = [
 ]
 
 # (file, exact block to replace, replacement, human label)
-# These are the call sites in *still-linked* libs that referenced symbols
-# defined inside the stripped editor libs (found via run #30 LNK2019s, then
-# verified exhaustively against pristine v2.83.20 with grep).
-BLOCK_REPLACEMENTS = [
+W1_BLOCK_REPLACEMENTS = [
     # rna_space.c: Graph-editor Drivers-mode init (generated rna_space_gen.c
     # is built from this file, so patching the source fixes the build).
     ("source/blender/makesrna/intern/rna_space.c",
@@ -169,6 +182,68 @@ BLOCK_REPLACEMENTS = [
      "transform_convert.c NLA post-op refresh"),
 ]
 
+# ---------------------------------------------------------------------------
+# Wave 2
+# ---------------------------------------------------------------------------
+
+W2_LINE_REMOVALS = [
+    # Registration (spacetypes.c)
+    ("source/blender/editors/space_api/spacetypes.c",
+     "  ED_spacetype_sequencer();\n", "Sequencer registration"),
+    ("source/blender/editors/space_api/spacetypes.c",
+     "  ED_spacetype_clip();\n", "Clip editor registration"),
+    ("source/blender/editors/space_api/spacetypes.c",
+     "  ED_operatortypes_sculpt();\n", "Sculpt operator types"),
+    ("source/blender/editors/space_api/spacetypes.c",
+     "  ED_operatortypes_paint();\n", "Paint operator types"),
+    ("source/blender/editors/space_api/spacetypes.c",
+     "  ED_operatormacros_clip();\n", "Clip operator macros"),
+    ("source/blender/editors/space_api/spacetypes.c",
+     "  ED_operatormacros_sequencer();\n", "Sequencer operator macros"),
+    ("source/blender/editors/space_api/spacetypes.c",
+     "  ED_operatormacros_paint();\n", "Paint operator macros"),
+    ("source/blender/editors/space_api/spacetypes.c",
+     "  ED_keymap_paint(keyconf);\n", "Paint keymap"),
+    # Build graph: subdirectories
+    ("source/blender/editors/CMakeLists.txt",
+     "  add_subdirectory(sculpt_paint)\n", "sculpt_paint subdir"),
+    ("source/blender/editors/CMakeLists.txt",
+     "  add_subdirectory(space_clip)\n", "space_clip subdir"),
+    ("source/blender/editors/CMakeLists.txt",
+     "  add_subdirectory(space_sequencer)\n", "space_sequencer subdir"),
+    # Build graph: link deps
+    ("source/blender/editors/space_api/CMakeLists.txt",
+     "  bf_editor_space_clip\n", "space_clip link dep (space_api)"),
+    ("source/blender/editors/space_api/CMakeLists.txt",
+     "  bf_editor_space_sequencer\n", "space_sequencer link dep (space_api)"),
+    ("source/blender/editors/screen/CMakeLists.txt",
+     "  bf_editor_space_sequencer\n", "space_sequencer link dep (screen)"),
+    ("source/blender/makesrna/intern/CMakeLists.txt",
+     "  bf_editor_sculpt_paint\n", "sculpt_paint link dep (makesrna)"),
+    # Sculpt/PaintCurve undo registration: leave BKE_UNDOSYS_TYPE_* NULL
+    # (tolerated by every reader) instead of registering a zeroed UndoType.
+    ("source/blender/editors/undo/undo_system_types.c",
+     "  BKE_UNDOSYS_TYPE_SCULPT = BKE_undosys_type_append(ED_sculpt_undosys_type);\n",
+     "Sculpt undo registration"),
+    ("source/blender/editors/undo/undo_system_types.c",
+     "  BKE_UNDOSYS_TYPE_PAINTCURVE = BKE_undosys_type_append(ED_paintcurve_undosys_type);\n",
+     "PaintCurve undo registration"),
+]
+
+W2_BLOCK_REPLACEMENTS = [
+    # Stub TU: the file itself is copied into the tree by main() (from
+    # scripts/wave2_stubs.c next to this script), and only registered in the
+    # build here — its includes (<stdbool.h>, RNA_types.h,
+    # DNA_sequence_types.h) all resolve via space_api's existing INC.
+    ("source/blender/editors/space_api/CMakeLists.txt",
+     "set(SRC\n  spacetypes.c\n)",
+     "set(SRC\n  spacetypes.c\n  wave2_stubs.c\n)",
+     "wave2 stub TU into space_api SRC"),
+]
+
+# Where the stub TU is staged inside the tree (must match the SRC entry above).
+W2_STUB_DEST = "source/blender/editors/space_api/wave2_stubs.c"
+
 
 def process(path: Path, rel: str, old: str, new: str, label: str, mode: str) -> int:
     """Apply one anchor. Returns 0 ok, 1 problem."""
@@ -177,8 +252,14 @@ def process(path: Path, rel: str, old: str, new: str, label: str, mode: str) -> 
         return 1
     text = path.read_text(encoding="utf-8", errors="replace")
     if old not in text:
-        if new in text:
+        if new and new in text:
             print(f"already stripped: {label} ({rel})")
+            return 0
+        if mode == "line":
+            # A deleted line can't be re-detected textually; its absence on an
+            # already-stripped tree is exactly the goal. (Upstream drift would
+            # equally remove it — the CI build verifies the outcome.)
+            print(f"already stripped (line absent): {label} ({rel})")
             return 0
         print(f"ANCHOR NOT FOUND (upstream drift?): {label} ({rel})")
         return 1
@@ -189,18 +270,39 @@ def process(path: Path, rel: str, old: str, new: str, label: str, mode: str) -> 
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Apply Vibe3D Wave-1 source strips.")
+    ap = argparse.ArgumentParser(description="Apply Vibe3D source strips.")
     ap.add_argument("--source-dir", default="source")
     args = ap.parse_args()
     root = Path(args.source_dir)
 
     failures = 0
-    for rel, line, label in LINE_REMOVALS:
+    for rel, line, label in W1_LINE_REMOVALS:
         failures += process(root / rel, rel, line, "", label, mode="line")
-    for rel, old, new, label in BLOCK_REPLACEMENTS:
+    for rel, old, new, label in W1_BLOCK_REPLACEMENTS:
+        failures += process(root / rel, rel, old, new, label, mode="block")
+    w1 = failures
+
+    # Stage the Wave-2 stub TU next to spacetypes.c (idempotent copy).
+    stub_src = Path(__file__).resolve().parent / "wave2_stubs.c"
+    stub_dst = root / W2_STUB_DEST
+    if not stub_src.exists():
+        print(f"MISSING FILE: {stub_src}")
+        failures += 1
+    else:
+        stub_dst.parent.mkdir(parents=True, exist_ok=True)
+        if not stub_dst.exists() or stub_dst.read_bytes() != stub_src.read_bytes():
+            shutil.copy2(stub_src, stub_dst)
+            print(f"staged: wave2 stub TU -> {W2_STUB_DEST}")
+        else:
+            print(f"already staged: wave2 stub TU ({W2_STUB_DEST})")
+
+    for rel, line, label in W2_LINE_REMOVALS:
+        failures += process(root / rel, rel, line, "", label, mode="line")
+    for rel, old, new, label in W2_BLOCK_REPLACEMENTS:
         failures += process(root / rel, rel, old, new, label, mode="block")
 
-    print("STRIP WAVE 1 OK" if failures == 0 else f"STRIP WAVE 1 FAILED ({failures} problems)")
+    print("STRIP WAVE 1 OK" if w1 == 0 else f"STRIP WAVE 1 FAILED ({w1} problems)")
+    print("STRIP WAVE 2 OK" if failures == 0 else f"STRIP WAVES FAILED ({failures} problems)")
     return 1 if failures else 0
 
 

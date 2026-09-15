@@ -57,13 +57,37 @@ back to the 3D Viewport (`ED_area_initialize`, editors/screen/area.c).
 Note: animation *data* (keyframes, fcurves, constraints) and the Python API
 stay fully intact — only the hand-editing UIs are removed.
 
+### Wave 2 — sculpt/paint, sequencer, clip editor (in CI, pending green build)
+
+Larger modules referenced from ~40 keeper files (~81 external symbols), so
+these strips use a different mechanism: instead of editing call sites, the
+strip injects a stub translation unit (`scripts/wave2_stubs.c`, prototypes
+verbatim from upstream headers, inert no-op bodies) compiled INTO
+`bf_editor_space_api` — every keeper file keeps linking unchanged.
+
+| Module | Anchors removed | Status |
+|---|---|---|
+| Sculpt + paint modes (`sculpt_paint`) | subdir, link deps (space_api + makesrna), operator-type/macro registrations, `ED_keymap_paint`, Sculpt+PaintCurve undo registrations | in CI |
+| Sequencer (`space_sequencer`) | subdir, link deps (space_api + screen), registration + macros | in CI |
+| Clip editor (`space_clip`) | subdir, link dep (space_api), registration + macros | in CI |
+
+Stub semantics worth knowing:
+- Sculpt/PaintCurve undo types are deliberately left **unregistered**
+  (`BKE_UNDOSYS_TYPE_*` stay NULL) rather than registered as zeroed structs;
+  every reader tolerates NULL and painting/sculpt undo is meaningless with
+  the modes gone.
+- `sequencer_ibuf_get` (image sample-info operator path) returns NULL; its
+  one reachable caller already NULL-checks.
+- Mode-toggle entry points (`ED_object_sculptmode_enter*` etc.) are no-ops:
+  the UI buttons that called them are not registered.
+
 ### Later waves (planned, verify deps before each)
 
 | Module | Dir | Notes |
 |---|---|---|
-| Sculpt mode (keep paint/UV) | `source/source/blender/editors/sculpt_paint/sculpt*` | PBVH machinery is entangled with mesh eval; needs a dep pass |
-| Sequencer | `source/source/blender/editors/space_sequencer` | Video editing UI; render path dep to verify |
-| Clip / movie clip editor | `source/source/blender/editors/space_clip` | Motion-tracking UI; unrelated to scripting host |
+| Grease Pencil (annotate) | `source/source/blender/editors/gpencil` | entangled with view3d annotation drawing; dep pass needed |
+| Info editor (`space_info`) | `source/source/blender/editors/space_info` | log window; low value once the script host UI lands |
+| Vertex/weight paint *data* stays | — | Python API untouched (mesh vertex colors remain accessible) |
 
 ## Keep (core of the scripting host)
 
