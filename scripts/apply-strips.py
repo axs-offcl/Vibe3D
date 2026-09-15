@@ -230,7 +230,21 @@ W2_LINE_REMOVALS = [
      "PaintCurve undo registration"),
 ]
 
+# Run-#33 lesson: bf_editor_util (ed_util/numinput/ed_transverts/
+# select_utils/gizmo_utils) had exactly ONE incoming link edge in pristine
+# 2.83 — space_sequencer. Removing the sequencer dropped util out of the
+# final-link closure (LNK1120: 33 unresolved). windowmanager genuinely calls
+# these symbols (wm_operators.c etc.), so re-link it there. Keep the byte-exact
+# pristine block as anchor so re-runs detect the "already" case.
+W2_WM_RELINK = (
+    "source/blender/windowmanager/CMakeLists.txt",
+    "set(LIB\n  bf_editor_screen\n)",
+    "set(LIB\n  bf_editor_screen\n  bf_editor_util\n)",
+    "re-link bf_editor_util into the link closure (windowmanager LIB)",
+)
+
 W2_BLOCK_REPLACEMENTS = [
+    W2_WM_RELINK,
     # Stub TU: the file itself is copied into the tree by main() (from
     # scripts/wave2_stubs.c next to this script), and only registered in the
     # build here — its includes (<stdbool.h>, RNA_types.h,

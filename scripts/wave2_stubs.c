@@ -24,6 +24,14 @@
 #include "RNA_types.h"
 #include "DNA_sequence_types.h"
 
+/* transform_generics.c still calls this on the modal-transform path even
+ * with sculpt mode stripped (flag-guarded at runtime, not compiled out). */
+void ED_sculpt_update_modal_transform(struct bContext *C)
+{
+  /* Vibe3D stub: feature stripped. */
+  (void)C;
+}
+
 void BKE_paint_data_warning(struct ReportList *reports, bool uvs, bool mat, bool tex, bool stencil)
 {
   /* Vibe3D stub: feature stripped. */
