@@ -13,9 +13,10 @@
 | `<exe dir>\*.dll` | OpenImageIO, OpenColorIO, Boost, FFmpeg, SDL, OpenAL, … | build dependencies |
 
 (`startup.blend` is compiled into the exe as `datatoc` data in 2.83 — run
-#35+ embeds the Vibe3D layout; older builds relied on `%APPDATA%`.)
+#36+ embeds the Vibe3D layout; run ≤ #35 embeds upstream's factory startup,
+whose Timeline area is a stripped space and crashes GUI startup.)
 
-## Easy path — the portable bundle (run #35+)
+## Easy path — the portable bundle (run #36+)
 
 From the green run's summary page, download the
 **`Vibe3D-windows-x64-portable`** artifact. It is a zip that already contains
@@ -23,10 +24,22 @@ From the green run's summary page, download the
 
 1. Download + unzip anywhere (e.g. `C:\Vibe3D\`).
 2. Double-click `Vibe3D.exe`. Nothing else is needed: the private CRT
-   (`blender.crt\`) and every runtime DLL ship inside, and the bundle carries
-   its own `2.83\config\startup.blend` so even `%APPDATA%` is optional.
+   (`blender.crt\`) ships the exact VS-Redist DLLs the CI toolset built the
+   exe against (plus `vcomp140.dll` — the exe imports it), and the factory
+   startup is baked into the exe itself in the Vibe3D layout.
+   `%APPDATA%\Blender Foundation\2.83\` is entirely optional.
 3. Smoke test: 3D viewport orbits, add a cube (Shift+A), open the Python
    console and run `import bpy; print(bpy.app.version)`.
+
+> **Run ≤ #35 caveat:** those bundles have two defects — `blender.crt\`
+> misses its DLLs (loader error `0xC0000135`; fix: copy
+> `msvcp140/vcruntime140/vcruntime140_1/concrt140.dll` from `C:\Windows\System32`
+> — but **not** from official Blender 2.83's `blender.crt`, whose 2020-era
+> DLLs crash a VS-2022 build inside MSVCP140) and upstream's embedded
+> factory startup triggers a 2 MB stack overflow at GUI init
+> (`0xC00000FD`; workaround: copy a clean startup into
+> `%APPDATA%\Blender Foundation\Blender\2.83\config\`). Both are fixed
+> from run #36 on (16 MB stack link flag + VS-Redist CRT sourcing).
 
 ### Prototype panel
 

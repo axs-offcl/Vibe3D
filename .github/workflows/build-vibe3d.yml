@@ -267,10 +267,37 @@ jobs:
           done
           mkdir -p "$EXE_DIR/blender.crt"
           cp scripts/blender.crt.manifest "$EXE_DIR/blender.crt/blender.crt.manifest"
-          for f in concrt140 msvcp140 msvcp140_1 msvcp140_2 msvcp140_atomic_wait msvcp140_codecvt_ids vcruntime140 vcruntime140_1; do
-            src=$(find lib/win64_vc15 -iname "$f.dll" -not -path "*/debug/*" | head -1)
-            if [ -n "$src" ]; then cp "$src" "$EXE_DIR/blender.crt/"; fi
-          done
+          # Source the CRT from the VS Redist folder of the toolset that
+          # BUILT the exe (NOT lib/win64_vc15 — the redistributables don't
+          # live there; NOT System32 — the runner may have a different
+          # version; NOT official Blender's blender.crt — those 2020-era
+          # DLLs crash a VS-2022-built binary inside MSVCP140). Run #35
+          # shipped an empty blender.crt and failed loader init 0xC0000135.
+          # Search every VS 2022 edition (GitHub runners use Enterprise,
+          # local installs often BuildTools) plus the vswhere fallback.
+          VS_ROOT=$(cygpath -u "${VCINSTALLDIR:-}")
+          if [ -z "$VS_ROOT" ]; then
+            for ed in Enterprise Professional Community BuildTools; do
+              d="/c/Program Files (x86)/Microsoft Visual Studio/2022/$ed/VC"
+              [ -d "$d" ] && VS_ROOT="$d" && break
+            done
+          fi
+          if [ -z "$VS_ROOT" ] && [ -f "/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" ]; then
+            VS_ROOT=$(cygpath -u "$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath)/VC")
+          fi
+          echo "VS_ROOT=$VS_ROOT"
+          CRT_SRC=$(find "$VS_ROOT/Redist/MSVC" -maxdepth 3 -type d \( -name "Microsoft.VC143.CRT" -o -name "Microsoft.VC142.CRT" \) -path "*x64*" 2>/dev/null | sort | tail -1)
+          OMP_SRC=$(find "$VS_ROOT/Redist/MSVC" -maxdepth 3 -type d \( -iname "Microsoft.VC143.OpenMP" -o -iname "Microsoft.VC142.OpenMP" \) -path "*x64*" 2>/dev/null | sort | tail -1)
+          echo "CRT_SRC=$CRT_SRC"; echo "OMP_SRC=$OMP_SRC"
+          test -n "$CRT_SRC" && test -f "$CRT_SRC/msvcp140.dll" || { echo "::error::VS Redist CRT not found — bundle would not start"; exit 1; }
+          cp "$CRT_SRC"/*.dll "$EXE_DIR/blender.crt/"
+          # The exe imports VCOMP140.DLL (OpenMP); official Blender ships it
+          # inside blender.crt as well.
+          if [ -n "$OMP_SRC" ] && [ -f "$OMP_SRC/vcomp140.dll" ]; then
+            cp "$OMP_SRC/vcomp140.dll" "$EXE_DIR/blender.crt/"
+          else
+            echo "::warning::vcomp140.dll not found — OpenMP-dependent startup may fail"
+          fi
           ls "$EXE_DIR/blender.crt/"
           # Patch the bundled Python UI layer for the stripped spaces (the
           # stock bl_ui register() aborts at the first stripped-space class,

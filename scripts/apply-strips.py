@@ -245,6 +245,16 @@ W2_WM_RELINK = (
 
 W2_BLOCK_REPLACEMENTS = [
     W2_WM_RELINK,
+    # Upstream sets /STACK:2097152 (2 MB, platform_win32.cmake:169). The
+    # stripped binary's GUI init recurses past that in some builds: run #35
+    # stack-overflowed (0xC00000FD) at window creation with byte-identical
+    # inputs to the green run #34, and a PE-header bump to 16 MB provably
+    # fixed it (validated locally, both user config and --factory-startup).
+    # Remove the fragility at the source instead of gambling per build.
+    ("build_files/cmake/platform/platform_win32.cmake",
+     "/STACK:2097152,70656",
+     "/STACK:16777216,1048576",
+     "raise linker stack reserve to 16 MB"),
     # Stub TU: the file itself is copied into the tree by main() (from
     # scripts/wave2_stubs.c next to this script), and only registered in the
     # build here — its includes (<stdbool.h>, RNA_types.h,

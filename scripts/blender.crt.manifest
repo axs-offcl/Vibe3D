@@ -9,4 +9,5 @@
   <file name="msvcp140_codecvt_ids.dll"/>
   <file name="vcruntime140.dll"/>
   <file name="vcruntime140_1.dll"/>
+  <file name="vcomp140.dll"/>
 </assembly>
