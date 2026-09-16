@@ -276,6 +276,13 @@ jobs:
           done
           mkdir -p "$EXE_DIR/blender.crt"
           cp scripts/blender.crt.manifest "$EXE_DIR/blender.crt/blender.crt.manifest"
+          # Portable mode: 2.83's BKE_appdir_app_is_portable_install() detects
+          # a config folder next to the exe and then keeps ALL user paths
+          # (prefs, autosave, datafiles overrides) inside the bundle. Without
+          # it, a direct Vibe3D.exe launch reads %APPDATA% prefs that a stale
+          # userpref.blend from another Blender build can crash at startup
+          # (the atio6axx.dll AV from the first user test).
+          mkdir -p "$EXE_DIR/2.83/config" "$EXE_DIR/2.83/autosave"
           # Source the CRT from the VS Redist folder of the toolset that
           # BUILT the exe (NOT lib/win64_vc15 — the redistributables don't
           # live there; NOT System32 — the runner may have a different
@@ -312,9 +319,6 @@ jobs:
           # stock bl_ui register() aborts at the first stripped-space class,
           # leaving TOPBAR menus and the io_* importers unregistered).
           python scripts/patch_scripts_bundle.py "$EXE_DIR/2.83/scripts"
-          # Portable launcher: keeps user config inside the bundle (BLENDER_USER_CONFIG
-          # -> .\config) so stale %APPDATA% prefs from other Blender installs can
-          # never crash Vibe3D (the atio6axx.dll AV reported on first user run).
           cp scripts/launch_vibe3d.bat "$EXE_DIR/"
           # Sanity: the bundle must contain the python dll if python was built.
           test -f "$EXE_DIR/python37.dll" || echo "::warning::python37.dll not bundled"

@@ -23,35 +23,44 @@ From the green run's summary page, download the
 `Vibe3D.exe + 2.83\ + blender.crt\ + all DLLs`. Then:
 
 1. Download + unzip anywhere (e.g. `C:\Vibe3D\`).
-2. Double-click **`launch_vibe3d.bat`** (preferred) or `Vibe3D.exe` directly.
+2. Double-click **`Vibe3D.exe`** directly (or `launch_vibe3d.bat` — same
+   effect, just a friendly wrapper that also accepts CLI args).
    Nothing else is needed: the private CRT (`blender.crt\`) ships the exact
    VS-Redist DLLs the CI toolset built the exe against (plus `vcomp140.dll`
    — the exe imports it), and the factory startup is baked into the exe
-   itself in the Vibe3D layout. The launcher additionally redirects prefs
-   into the bundle's own `config\` folder (via `BLENDER_USER_CONFIG`),
-   isolating Vibe3D from any other Blender install on the machine.
-   Direct `Vibe3D.exe` also works — it only uses
-   `%APPDATA%\Blender Foundation\2.83\` if that folder exists.
+   itself in the Vibe3D layout.
+
+   **Portable mode (runs #39+):** the bundle ships an empty `2.83\config\`
+   folder, which Blender 2.83's built-in portable-install detection picks
+   up — all user data (prefs, autosave) then lives *inside the bundle* and
+   `%APPDATA%` is never read or written. Stale prefs from other Blender
+   installs can't touch Vibe3D, and moving/deleting the folder = full reset.
+   Your settings live in `2.83\config\userpref.blend` next to the exe.
 3. Smoke test: 3D viewport orbits, add a cube (Shift+A), open the Python
    console and run `import bpy; print(bpy.app.version)`.
 
 ### If the GUI crashes on first run (atio6axx.dll / any AV at startup)
 
+**First, check the version.** Run ≤ #38 bundles are NOT portable: launching
+`Vibe3D.exe` directly reads `%APPDATA%` prefs. Run #39+ bundles are (the
+`2.83\config\` folder triggers portable mode automatically). For a ≤ #38
+bundle, either create the folder yourself — `mkdir 2.83\config` inside the
+bundle — or fix the environment directly:
+
 One confirmed field report: Vibe3D crashed on the user's first launch with
 `EXCEPTION_ACCESS_VIOLATION ... atio6axx.dll` (the AMD OpenGL driver) after
-prefs loaded fine. The binary itself is fine — on the same machine with an
-empty `%APPDATA%\Blender Foundation\Blender\2.83\config\` it boots every
-time. The trigger was a `userpref.blend` saved earlier by another Blender
-build: on load, Vibe3D re-creates GPU driver settings/GPU states from prefs
-that don't match its toolset, and the AMD ICD dereferences them.
+prefs loaded fine. The binary itself is fine — on the same machine with a
+fresh config it boots every time (12+ consecutive clean GUI boots observed).
+The trigger was a `userpref.blend` saved earlier by another Blender build:
+on load, Vibe3D re-creates GPU driver settings/GPU states from prefs that
+don't match its toolset, and the AMD ICD dereferences them. The crash is
+also intermittent (a race in driver state creation), so a bundle can boot
+cleanly several times and still be reading poison prefs.
 
-Fix (pick one):
-
-- **Use the launcher** (`launch_vibe3d.bat`) — its `BLENDER_USER_CONFIG`
-  redirect makes this impossible: Vibe3D then never reads `%APPDATA%`.
-- Or delete the stale prefs once:
-  `%APPDATA%\Blender Foundation\Blender\2.83\config\userpref.blend`
-  (the whole `config\` folder is safe to delete — it regenerates).
+Fix: with a #39+ bundle this cannot happen (portable mode). Otherwise delete
+the stale prefs once:
+`%APPDATA%\Blender Foundation\Blender\2.83\config\userpref.blend`
+(the whole `config\` folder is safe to delete — it regenerates).
 
 Related cosmetic warnings that do NOT block startup: `wm.keymap ... unknown
 operator 'CLIP_OT_*'/'SEQUENCER_OT_*'` (keymaps of deliberately stripped
@@ -117,8 +126,9 @@ environment yourself:
 ## Notes
 
 - Blender 2.83 embeds its Python: no system Python install is required or used.
-- User preferences/cache land in `%APPDATA%\Vibe3D\2.83\config\` (safe to
-  delete to reset).
+- User preferences/cache live in the bundle's `2.83\config\` and
+  `2.83\autosave\` (portable mode). Delete them to reset to factory
+  defaults — `%APPDATA%` is never touched.
 - If the exe starts but the UI is broken/text missing, the `2.83\datafiles\`
   copy is incomplete — recopy `fonts` and `colormanagement`.
 - Phase 4 note: once the script host lands, packs go into
