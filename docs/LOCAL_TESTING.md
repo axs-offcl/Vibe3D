@@ -23,13 +23,41 @@ From the green run's summary page, download the
 `Vibe3D.exe + 2.83\ + blender.crt\ + all DLLs`. Then:
 
 1. Download + unzip anywhere (e.g. `C:\Vibe3D\`).
-2. Double-click `Vibe3D.exe`. Nothing else is needed: the private CRT
-   (`blender.crt\`) ships the exact VS-Redist DLLs the CI toolset built the
-   exe against (plus `vcomp140.dll` — the exe imports it), and the factory
-   startup is baked into the exe itself in the Vibe3D layout.
-   `%APPDATA%\Blender Foundation\2.83\` is entirely optional.
+2. Double-click **`launch_vibe3d.bat`** (preferred) or `Vibe3D.exe` directly.
+   Nothing else is needed: the private CRT (`blender.crt\`) ships the exact
+   VS-Redist DLLs the CI toolset built the exe against (plus `vcomp140.dll`
+   — the exe imports it), and the factory startup is baked into the exe
+   itself in the Vibe3D layout. The launcher additionally redirects prefs
+   into the bundle's own `config\` folder (via `BLENDER_USER_CONFIG`),
+   isolating Vibe3D from any other Blender install on the machine.
+   Direct `Vibe3D.exe` also works — it only uses
+   `%APPDATA%\Blender Foundation\2.83\` if that folder exists.
 3. Smoke test: 3D viewport orbits, add a cube (Shift+A), open the Python
    console and run `import bpy; print(bpy.app.version)`.
+
+### If the GUI crashes on first run (atio6axx.dll / any AV at startup)
+
+One confirmed field report: Vibe3D crashed on the user's first launch with
+`EXCEPTION_ACCESS_VIOLATION ... atio6axx.dll` (the AMD OpenGL driver) after
+prefs loaded fine. The binary itself is fine — on the same machine with an
+empty `%APPDATA%\Blender Foundation\Blender\2.83\config\` it boots every
+time. The trigger was a `userpref.blend` saved earlier by another Blender
+build: on load, Vibe3D re-creates GPU driver settings/GPU states from prefs
+that don't match its toolset, and the AMD ICD dereferences them.
+
+Fix (pick one):
+
+- **Use the launcher** (`launch_vibe3d.bat`) — its `BLENDER_USER_CONFIG`
+  redirect makes this impossible: Vibe3D then never reads `%APPDATA%`.
+- Or delete the stale prefs once:
+  `%APPDATA%\Blender Foundation\Blender\2.83\config\userpref.blend`
+  (the whole `config\` folder is safe to delete — it regenerates).
+
+Related cosmetic warnings that do NOT block startup: `wm.keymap ... unknown
+operator 'CLIP_OT_*'/'SEQUENCER_OT_*'` (keymaps of deliberately stripped
+spaces), the matching `property '...' not found in keymap item` spam, and —
+in bundles from runs ≤ #37 — `Missing icons: ops.*.dat` (gizmo icons were
+not packaged; fixed from run #38 on, alongside the launcher).
 
 > **Run ≤ #35 caveat:** those bundles have two defects — `blender.crt\`
 > misses its DLLs (loader error `0xC0000135`; fix: copy

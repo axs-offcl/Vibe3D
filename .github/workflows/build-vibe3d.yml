@@ -239,6 +239,15 @@ jobs:
           cp -r source/release/scripts "$EXE_DIR/2.83/scripts"
           cp -r source/release/datafiles/colormanagement "$EXE_DIR/2.83/datafiles/colormanagement"
           cp -r source/release/datafiles/fonts "$EXE_DIR/2.83/datafiles/fonts"
+          # Icon .dat files are loaded from DISK at runtime — without them
+          # every session logs "Missing icons: ops.*.dat Unable to load from
+          # file" and viewport gizmos render icon-less.
+          if [ -d source/release/datafiles/icons ]; then
+            cp -r source/release/datafiles/icons "$EXE_DIR/2.83/datafiles/icons"
+            echo "  icons: $(find "$EXE_DIR/2.83/datafiles/icons" -name '*.dat' | wc -l) files"
+          else
+            echo "::warning::source/release/datafiles/icons missing — gizmo icons will be absent"
+          fi
           if [ -d lib/win64_vc15/python/37 ]; then
             mkdir -p "$EXE_DIR/2.83/python"
             cp -r lib/win64_vc15/python/37/bin "$EXE_DIR/2.83/python/bin"
@@ -303,14 +312,19 @@ jobs:
           # stock bl_ui register() aborts at the first stripped-space class,
           # leaving TOPBAR menus and the io_* importers unregistered).
           python scripts/patch_scripts_bundle.py "$EXE_DIR/2.83/scripts"
+          # Portable launcher: keeps user config inside the bundle (BLENDER_USER_CONFIG
+          # -> .\config) so stale %APPDATA% prefs from other Blender installs can
+          # never crash Vibe3D (the atio6axx.dll AV reported on first user run).
+          cp scripts/launch_vibe3d.bat "$EXE_DIR/"
           # Sanity: the bundle must contain the python dll if python was built.
           test -f "$EXE_DIR/python37.dll" || echo "::warning::python37.dll not bundled"
           ZIP="$GITHUB_WORKSPACE/Vibe3D-windows-x64-portable.zip"
           if command -v 7z > /dev/null 2>&1; then
-            (cd "$EXE_DIR" && 7z a -tzip "$(cygpath -w "$ZIP")" Vibe3D.exe 2.83 blender.crt *.dll > /dev/null)
+            (cd "$EXE_DIR" && 7z a -tzip "$(cygpath -w "$ZIP")" Vibe3D.exe launch_vibe3d.bat 2.83 blender.crt *.dll > /dev/null)
           else
-            pwsh -Command "Compress-Archive -Path '$(cygpath -w "$EXE_DIR")\Vibe3D.exe','$(cygpath -w "$EXE_DIR")\2.83','$(cygpath -w "$EXE_DIR")\blender.crt' -DestinationPath '$(cygpath -w "$ZIP")' -Force; if (Test-Path '$(cygpath -w "$EXE_DIR")\*.dll') { Compress-Archive -Path '$(cygpath -w "$EXE_DIR")\*.dll' -Update -DestinationPath '$(cygpath -w "$ZIP")' }"
+            pwsh -Command "Compress-Archive -Path '$(cygpath -w "$EXE_DIR")\Vibe3D.exe','$(cygpath -w "$EXE_DIR")\launch_vibe3d.bat','$(cygpath -w "$EXE_DIR")\2.83','$(cygpath -w "$EXE_DIR")\blender.crt' -DestinationPath '$(cygpath -w "$ZIP")' -Force; if (Test-Path '$(cygpath -w "$EXE_DIR")\*.dll') { Compress-Archive -Path '$(cygpath -w "$EXE_DIR")\*.dll' -Update -DestinationPath '$(cygpath -w "$ZIP")' }"
           fi
+          test -f "$EXE_DIR/launch_vibe3d.bat" || { echo "::error::launcher missing from bundle"; exit 1; }
           ls -la "$ZIP"
 
       - name: Upload Vibe3D.exe
