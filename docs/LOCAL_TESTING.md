@@ -12,22 +12,38 @@
 | `2.83\python\bin`, `2.83\python\lib` | python37.dll + stdlib | embedded Python |
 | `<exe dir>\*.dll` | OpenImageIO, OpenColorIO, Boost, FFmpeg, SDL, OpenAL, … | build dependencies |
 
-(`startup.blend` is compiled into the exe as `datatoc` data in 2.83 — no file
-needed for it.)
+(`startup.blend` is compiled into the exe as `datatoc` data in 2.83 — run
+#35+ embeds the Vibe3D layout; older builds relied on `%APPDATA%`.)
 
-## Easy path — the portable bundle (run #33+)
+## Easy path — the portable bundle (run #35+)
 
 From the green run's summary page, download the
 **`Vibe3D-windows-x64-portable`** artifact. It is a zip that already contains
-`Vibe3D.exe + 2.83\ + all DLLs`. Then:
+`Vibe3D.exe + 2.83\ + blender.crt\ + all DLLs`. Then:
 
 1. Download + unzip anywhere (e.g. `C:\Vibe3D\`).
-2. Double-click `Vibe3D.exe`. First run creates
-   `%APPDATA%\Vibe3D` for preferences.
+2. Double-click `Vibe3D.exe`. Nothing else is needed: the private CRT
+   (`blender.crt\`) and every runtime DLL ship inside, and the bundle carries
+   its own `2.83\config\startup.blend` so even `%APPDATA%` is optional.
 3. Smoke test: 3D viewport orbits, add a cube (Shift+A), open the Python
-   console (window type dropdown) and run `import bpy; print(bpy.app.version)`.
+   console and run `import bpy; print(bpy.app.version)`.
 
-## Manual path — from the `Vibe3D-windows-x64` artifact (runs ≤ #32)
+### Prototype panel
+
+`scripts/proto_panel.py` (in the repo) is the Phase-4 floating-panel
+prototype. To try it:
+
+```bat
+cd C:\Vibe3D
+Vibe3D.exe --python path\to\proto_panel.py
+```
+
+A draggable panel appears over the viewport: drag its title bar to move it,
+press **Add Cube** to run a script function, press **x** to close,
+`Vibe3D: Toggle Panel` (F3 search) re-shows it. All viewport navigation
+keeps working underneath the panel.
+
+## Manual path — from the `Vibe3D-windows-x64` artifact (runs ≤ #34)
 
 Those artifacts contain the bare exe only, so you must assemble the
 environment yourself:

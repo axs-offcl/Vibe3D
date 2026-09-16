@@ -25,6 +25,38 @@ core? Decision: **Python-driven UI shipped as a bundled add-on**
    engine (same buttons, tooltips, search as everything else) — the only
    Python is the draw callback and the dispatcher operator.
 
+## 1a. Floating overlay panel — prototyped and validated (2026-09-16)
+
+The user requirement sharpened: **no separate OS window** — the panel must be
+an overlay *inside* the 3D Viewport (drag anywhere, stays while you work,
+like KAM rollouts). Approach #1 (GPU overlay) was prototyped against the
+real stripped binary (`scripts/proto_panel.py`) and validated:
+
+- `SpaceView3D.draw_handler_add(..., 'WINDOW', 'POST_PIXEL')` draws rects
+  (`gpu` + `bgl` blend) and text (`blf`) in region-local pixel space. Works.
+- Interaction = a **short-lived modal operator**: a click inside the panel
+  arms drag or runs the button; clicks outside `PASS_THROUGH`, so viewport
+  navigation keeps working underneath. Drag-move verified end-to-end.
+- Verified rendered output via `bgl.glReadPixels` of a title-bar pixel
+  inside the draw handler: (0.157, 0.169, 0.220) vs draw color
+  (0.16, 0.17, 0.22).
+- 2.83 API notes: batch constructor is `batch_for_shader(shader, ...)`
+  (format comes from the shader); `bpy.app.timers` is the sanctioned async
+  path; a windowless timer has **no operator context** —
+  `screen.screenshot` poll fails there.
+- Known upstream quirk (not Vibe3D): timer-driven `wm.quit_blender()`
+  access-violates in stock 2.83.20 (verified on official `blender.exe`).
+  Test scripts must `os._exit()` instead.
+- GUI-startup fix shipped with the prototype: the embedded factory
+  `startup.blend` contained a Timeline area (SPACE_ACTION) whose init
+  crashes in the stripped binary; `apply-strips.py` now overlays a Vibe3D
+  startup (all screens scrubbed) before the blob is compiled in.
+
+The host UI (pack scan → buttons) will render inside this same overlay
+framework: each pack = a collapsible section, each script = a button row.
+The v1 N-panel sidebar remains the fallback layout, sharing the same
+scanner/dispatcher code.
+
 The "floating panel" from the plan maps to two deliverables:
 
 - **v1 (this phase):** the host UI as a **3D Viewport sidebar tab**

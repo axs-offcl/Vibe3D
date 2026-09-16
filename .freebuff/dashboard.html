@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vibe3D — Project Dashboard</title><style>
+:root{--bg:#14161a;--fg:#d7dae0;--mut:#8b93a1;--acc:#4772b3;--ok:#4caf50;--warn:#e2b93b;--card:#1c1f26}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 -apple-system,'Segoe UI',Roboto,sans-serif}
+header{padding:28px 32px 20px;border-bottom:1px solid #2a2e36;background:linear-gradient(180deg,#1a1e26,var(--bg))}
+h1{margin:0;font-size:24px;letter-spacing:.5px}
+h1 span{color:var(--acc)}
+header p{margin:6px 0 0;color:var(--mut)}
+main{max-width:980px;margin:0 auto;padding:24px 32px 64px}
+section{margin:28px 0}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:1.5px;color:var(--mut);border-bottom:1px solid #2a2e36;padding-bottom:8px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+td,th{padding:7px 10px;border-bottom:1px solid #262b33;text-align:left;vertical-align:top}
+th{color:var(--mut);font-weight:600}
+code{background:#262b33;padding:1px 6px;border-radius:4px;font-size:12.5px;color:#9cc0f5}
+ul,ol{margin:8px 0;padding-left:22px}
+li{margin:5px 0}
+.phase{display:flex;gap:14px;padding:12px 14px;border:1px solid #262b33;border-radius:8px;margin:8px 0;background:var(--card);align-items:flex-start}
+.phase .num{width:28px;height:28px;border-radius:50%;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
+.phase .badge{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:10px;margin-left:10px;vertical-align:middle}
+.phase.active{border-color:var(--acc)}
+.phase.done .badge{background:#2f5233;color:#8fd694}
+.phase.done-partial .badge{background:#3d5c3e;color:#8fd694}
+.phase.active .badge{background:#3a4d6b;color:#9cc0f5}
+.phase.todo .badge{background:#333842;color:var(--mut)}
+.phase p{margin:4px 0 0;color:var(--mut);font-size:13.5px}
+footer{color:var(--mut);font-size:12px;border-top:1px solid #2a2e36;margin-top:40px;padding-top:16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+</style></head>
+<body>
+<header>
+<h1><span>◆</span> Vibe3D</h1>
+<p>Lightweight, highly scriptable Blender fork — a fast scripting host bridging 3ds Max and Blender</p>
+</header>
+<main>
+<section><h2>Roadmap</h2><div class="phase done"><span class="num">1</span><div><b>CI green</b><span class="badge">done</span><p>runs #27-#29 green; rolling libs cache, era-gap patches</p></div></div><div class="phase done"><span class="num">2</span><div><b>CMake-level strip</b><span class="badge">done</span><p>10 WITH_* flags + NDOF/i18n/OpenSubdiv lightness flags</p></div></div><div class="phase active"><span class="num">3</span><div><b>Source-level strip (waves)</b><span class="badge">Waves 1+2 pushed</span><p>W1 animation editors green (#31); W2 sculpt/sequencer/clip via auto-stub TU (run #33)</p></div></div><div class="phase active"><span class="num">4</span><div><b>Scripting platform UI</b><span class="badge">in design</span><p>floating side panel host — architecture in docs/SCRIPT_HOST_DESIGN.md; Python-driven UI, C core untouched</p></div></div><div class="phase todo"><span class="num">5</span><div><b>Script packs &amp; ecosystem</b><span class="badge">format defined</span><p>pack.json + button contract in SCRIPT_HOST_DESIGN.md; packs root = 2.83/scripts/vibe3d_packs</p></div></div></section>
+<section><h2>Risks / caveats</h2><ul><li>Dev sandbox is Linux (no MSVC): CI is the only real test bed.</li><li>Runner RAM/link time: fallback is <code>--parallel 2</code> if Release linking OOMs or the 360-min timeout gets tight.</li><li>Keep the single-job structure; no premature splitting.</li></ul></section>
+<section><h2>CI status — windows-latest build</h2><p style="color:var(--ok)"><b>GREEN — runs #27-#32 built Vibe3D.exe and uploaded artifacts; run #33 adds the Wave-2 strip + portable bundle.</b></p><p>The fix stack, peeled in order: IP-lottery resumable fetch + rolling cache → era-correct libs <b>r62438</b> (OCIO v1 + python/37) → audaspace <code>&lt;string&gt;</code> → <code>/wd5287</code> → OIIO fmt <code>_SECURE_SCL</code> guard → OIIO link shims via <code>/ALTERNATENAME</code>. Artifacts: <code>Vibe3D-windows-x64</code> (bare exe) and <code>Vibe3D-windows-x64-portable</code> (exe + <code>2.83/</code> + DLLs — see docs/LOCAL_TESTING.md). Full trail: <code>docs/CI_REPAIR_PLAN.md</code>.</p><ol><li>✅ <b>DONE</b> — &quot;Rename to Vibe3D.exe&quot; replaced by &quot;Verify Vibe3D.exe&quot;: accepts <code>Vibe3D.exe</code> (expected) or <code>blender.exe</code> (fallback); fails only if neither exists. Artifact glob <code>build/**/Vibe3D.exe</code> unchanged.</li><li>✅ <b>DONE</b> — <code>apply-msvc-patches.py</code> committed and wired in right after branding: <code>python scripts/apply-msvc-patches.py --source-dir source</code> (idempotent, fails loudly on upstream drift).</li><li>✅ <b>DONE</b> — svn fetch v3 (<code>scripts/fetch-win64-libs.sh</code>): per-subtree fetch of only the ~23 dirs the stripped build references (skips llvm/osl/OpenImageDenoise/embree/usd/alembic/opencollada/ openvdb/blosc/nanovdb/shaderc/vulkan/hidapi/potrace/haru/zstd — ~6 GB of dead weight incl. the llvm/debug 429 magnet), peg-revision URLs, <code>svn cleanup</code> + <code>svn checkout --force</code> resume rounds, sentinel-gated success, concurrency-serialized runs. See &quot;Run history&quot;.</li><li>✅ <b>DONE</b> — pre-flight diagnostics step (disk free, toolchain versions) and configure-failure log dump (CMakeError.log / configure log tails).</li><li>⏳ <b>IN PROGRESS</b> — next unknown is the compile itself: MSVC-2022/2026 era errors in 2.83 code beyond C5287 belong in <code>apply-msvc-patches.py</code> (its designed role), not toolchain fights.</li><li><b>IP-lottery fetch</b> — selective per-subtree resumable sentinel-gated svn fetch + rolling partial-progress cache + serialized runs. A burned runner IP fails fast and banks its bytes; a fresh IP can pull the whole ~2 GB selective set in one sitting (runs #20→#23a2).</li><li><b>Era-correct libs r62438</b> — the tree as of the 2.83 release day: OCIO v1 API, python/37 (r62700 was 3.0-era and unbuildable against 2.83&#x27;s ocio_impl.cc).</li><li><b>audaspace <code>&lt;string&gt;</code> includes</b> — 14.5x STL stopped transitively providing it via <code>&lt;unordered_map&gt;</code> (patch script).</li><li><b>/wd5287</b> via platform_win32.cmake — mixed-enum flag ORs are a class, not a site (patch script).</li><li><b>OIIO vendored fmt <code>_SECURE_SCL</code> value-aware guard</b> — the STL defines it to 0 as a shim but <code>#ifdef</code> treats defined-as-0 as TRUE (patch script, lib-side, re-applied after every cache restore).</li><li><b>OIIO link shims</b> — two dllimport inline members (string_view default ctor, TypeDesc::is_array) are absent from the 2020 DLL; VS2019 always inlined them, MSVC 14.5x emits __imp_ calls. scripts/shims builds hand-written bodies (header-verified layouts) and /ALTERNATENAME routes only-unresolved lookups to them.</li><li>Cloudflare-fronted; cuts transfers with HTTP 429 after roughly 100–150 MB bursts (residential IP) or near-instantly (Azure runner IPs shared with other tenants).</li><li><b>IP lottery model</b> (runs #2/#19/#20 evidence): a fresh runner IP can pull the full 8 GB in one ~21-minute sitting (probe #2); a burned one gets ~20 MB and then instant 429s for many minutes — 30–60 s backoffs never lifted it (#19/#20).</li><li><code>svn update</code> on an interrupted checkout can return success while files are missing. <code>svn checkout --force</code> re-run in the same wc is faithful: existing files kept, missing re-fetched (verified locally: 142→196 MB resume of python/37).</li><li>Each attempt banks its partial tree (<code>win64-vc15-r62438-&lt;run&gt;</code> keys, saved <code>if: always()</code>), and re-attempts resume from the newest one.</li><li>Subtrees are ordered big-first, so even ~20 MB-budget attempts bank the most valuable bytes first.</li><li>A burned IP fails fast (~8 min) with exit 2 and a clear &quot;re-run me&quot; error — <b>re-run the failed job</b> (<code>Re-run failed jobs</code> on the run page, or push anything to main) until an attempt lands a fresh IP with real budget. Probe #2 shows one lucky IP finishes the whole remaining fetch in a single pass.</li><li>Worst case, ~10 attempts compound the ~2 GB selective set at ~50 MB/run — tedious but converging. The 7 small subtrees are already banked as of run #20.</li></ol></section>
+<div class="grid">
+<section><h2>Verified working</h2><table>
+<tr><th>Item</th><th>Result</th></tr>
+<tr><td>Branding/patch script anchors (15 strings)</td><td>all present in upstream v2.83.20</td></tr>
+<tr><td><code>WITH_*</code> CMake flags (10)</td><td>all exist as <code>option(...)</code> in v2.83.20</td></tr>
+<tr><td><code>cmake_minimum_required(3.5)</code></td><td>confirms the <code>CMAKE_POLICY_VERSION_MINIMUM=3.5</code> workaround</td></tr>
+<tr><td><code>svn.blender.org</code></td><td>alive (Cloudflare-fronted) — 429s are shared-IP rate limits, not repo death</td></tr>
+<tr><td><code>trunk/lib/win64_vc15</code> pinned at r62700</td><td>exists and contains <code>python/37/</code> (HEAD only has <code>311/</code>; <code>platform_win32.cmake:372</code> hardcodes <code>PYTHON_VERSION 3.7</code>, so the pin is safe)</td></tr>
+<tr><td>VisualSVN <code>Apache-Subversion-1.14.5.zip</code></td><td>200 OK (4.2 MB); <code>bin/svn.exe</code> + DLLs at zip root — the <code>$env:USERPROFILE\svn\bin</code> PATH entry is exactly right</td></tr>
+</table></section>
+<section><h2>Confirmed workflow bugs</h2><ol><li><b>Rename step self-sabotage.</b> <code>apply-branding.py</code> inserts <code>set_target_properties(blender PROPERTIES OUTPUT_NAME Vibe3D)</code>, so the build emits <code>Vibe3D.exe</code> directly and <code>blender.exe</code> never exists. The &quot;Rename to Vibe3D.exe&quot; step does <code>Get-ChildItem -Filter blender.exe</code> and throws &quot;blender.exe not found&quot; — killing an otherwise good 2–3 h build.</li><li><b><code>scripts/apply-msvc-patches.py</code> is untracked and never called.</b> The C5287 fix (MSVC 19.51 promoting enum-flag OR warnings under <code>/WX</code>) never reaches CI. It must be committed and wired into the workflow.</li></ol></section>
+</div>
+<section><h2>Strip list — Phase 1 (CMake flags + lightness flags, in CI)</h2><table>
+<tr><th>Module</th><th>CMake flag</th><th>Dir (for later deletion)</th><th>Status</th></tr>
+<tr><td>Cycles renderer</td><td><code>WITH_CYCLES=OFF</code></td><td><code>source/intern/cycles</code></td><td>flagged in CI</td></tr>
+<tr><td>Bullet Physics</td><td><code>WITH_BULLET=OFF</code></td><td><code>source/extern/bullet*</code></td><td>flagged in CI</td></tr>
+<tr><td>Fluid (Mantaflow)</td><td><code>WITH_MOD_FLUID=OFF</code></td><td><code>source/intern/mantaflow</code></td><td>flagged in CI</td></tr>
+<tr><td>Ocean sim</td><td><code>WITH_MOD_OCEANSIM=OFF</code></td><td><code>source/source/blender/blenkernel/intern/ocean*</code></td><td>flagged in CI</td></tr>
+<tr><td>Compositor</td><td><code>WITH_COMPOSITOR=OFF</code></td><td><code>source/source/blender/compositor</code></td><td>flagged in CI</td></tr>
+<tr><td>Freestyle</td><td><code>WITH_FREESTYLE=OFF</code></td><td><code>source/source/blender/freestyle</code></td><td>flagged in CI</td></tr>
+<tr><td>OpenVDB</td><td><code>WITH_OPENVDB=OFF</code></td><td><code>source/extern/openvdb</code></td><td>flagged in CI</td></tr>
+<tr><td>Alembic</td><td><code>WITH_ALEMBIC=OFF</code></td><td><code>source/extern/alembic</code></td><td>flagged in CI</td></tr>
+<tr><td>USD</td><td><code>WITH_USD=OFF</code></td><td><code>source/extern/USD</code></td><td>flagged in CI</td></tr>
+<tr><td>OpenCollada</td><td><code>WITH_OPENCOLLADA=OFF</code></td><td><code>source/extern/opencollada</code></td><td>flagged in CI</td></tr>
+<tr><td>Flag</td><td>What it drops</td><td>Status</td></tr>
+<tr><td><code>WITH_INPUT_NDOF=OFF</code></td><td>3D-mouse (SpaceNavigator) drivers</td><td>in CI</td></tr>
+<tr><td><code>WITH_INTERNATIONAL=OFF</code></td><td>i18n translations + fallback fonts (UI stays English)</td><td>in CI</td></tr>
+<tr><td><code>WITH_OPENSUBDIV=OFF</code></td><td>GPU subdivision surface evaluator (internal fallback kept)</td><td>in CI</td></tr>
+</table></section>
+<div class="grid">
+<section><h2>Strip list — Phase 2 Wave 1 (animation editors, in CI)</h2><table>
+<tr><th>Module</th><th>Anchor removed</th><th>Where</th><th>Status</th></tr>
+<tr><td>Dope Sheet (<code>space_action</code>)</td><td><code>ED_spacetype_action()</code> + macros + subdir + link dep</td><td>spacetypes.c, editors/CMakeLists.txt, space_api/CMakeLists.txt</td><td>in CI</td></tr>
+<tr><td>Graph editor (<code>space_graph</code>)</td><td><code>ED_spacetype_ipo()</code> + macros + subdir + link dep</td><td>same three files</td><td>in CI</td></tr>
+<tr><td>NLA (<code>space_nla</code>)</td><td><code>ED_spacetype_nla()</code> + subdir + link dep</td><td>same three files</td><td>in CI</td></tr>
+<tr><td>Symbol (defined in stripped lib)</td><td>Call site</td><td>Fix</td></tr>
+<tr><td><code>ED_drivers_editor_init</code></td><td><code>rna_space.c</code> (Graph Drivers-mode update)</td><td>branch replaced with comment + <code>(void)sipo;</code></td></tr>
+<tr><td><code>ED_drivers_editor_init</code></td><td><code>screen_ops.c</code> <code>SCREEN_OT_drivers_editor_show</code></td><td>invoke body stubbed; operator stays registered, cancels with an honest warning (keymaps/menus still reference its id)</td></tr>
+<tr><td><code>ED_operatormacros_action</code> / <code>_graph</code></td><td><code>spacetypes.c</code> <code>ED_spacemacros_init</code></td><td>calls removed</td></tr>
+<tr><td><code>nla_action_get_color</code></td><td><code>anim_channels_defines.c</code> (2 drawing callbacks)</td><td>neutral <code>zero_v4(color)</code> fill</td></tr>
+<tr><td><code>ED_nla_postop_refresh</code></td><td><code>transform_convert.c</code> NLA branch</td><td>call removed (strip re-sorting helper; data stays consistent)</td></tr>
+<tr><td>Module</td><td>Anchors removed</td><td>Status</td></tr>
+<tr><td>Sculpt + paint modes (<code>sculpt_paint</code>)</td><td>subdir, link deps (space_api + makesrna), operator-type/macro registrations, <code>ED_keymap_paint</code>, Sculpt+PaintCurve undo registrations</td><td>in CI</td></tr>
+<tr><td>Sequencer (<code>space_sequencer</code>)</td><td>subdir, link deps (space_api + screen), registration + macros</td><td>in CI</td></tr>
+<tr><td>Clip editor (<code>space_clip</code>)</td><td>subdir, link dep (space_api), registration + macros</td><td>in CI</td></tr>
+<tr><td>Module</td><td>Dir</td><td>Notes</td></tr>
+<tr><td>Grease Pencil (annotate)</td><td><code>source/source/blender/editors/gpencil</code></td><td>entangled with view3d annotation drawing; dep pass needed</td></tr>
+<tr><td>Info editor (<code>space_info</code>)</td><td><code>source/source/blender/editors/space_info</code></td><td>log window; low value once the script host UI lands</td></tr>
+<tr><td>Vertex/weight paint *data* stays</td><td>—</td><td>Python API untouched (mesh vertex colors remain accessible)</td></tr>
+</table></section>
+<section><h2>Keep (core of the scripting host)</h2><p>(core of the scripting host)
+
+3D Viewport, UV/Image editor, texture paint, Outliner, Properties,
+Python console + text editor, import/export, full animation <b>data</b> and
+<b>Python API</b> (only the editing UIs go), and — from Phase 4 — the floating
+side panel that hosts user script packs.</p></section>
+</div>
+<section><h2>Build constraints (local, measured 2026-09-12)</h2><ul><li>Disk C: ~7.3 GB free — TIGHT for Blender source + win64 libs + build tree. Full build trees often exceed 10 GB. Free space or use a second drive before fetching libs.</li><li>Toolchain found: MSVC 14.44 (VS 2022 BuildTools) + Windows SDK 10.0.26100.0. <code>cl.exe</code> present. No ninja / g++ on PATH. CMake 4.3.3 present.</li><li>Blender 2.83 era expects VS 2019 (v142) / CMake 3.x; VS 2022 + CMake 4.x needs compatibility flags (<code>-DCMAKE_POLICY_VERSION_MINIMUM=3.5</code>) and the era-gap patches in <code>scripts/apply-msvc-patches.py</code> (see CI workflow).</li></ul></section>
+<footer>Generated by <code>scripts/gen-dashboard.py</code> from docs/CI_REPAIR_PLAN.md, docs/STRIP_LIST.md, PROJECT_PLAN.md — re-run the script to refresh after doc edits. Data probed live 2026-09-13.</footer>
+</main></body></html>
