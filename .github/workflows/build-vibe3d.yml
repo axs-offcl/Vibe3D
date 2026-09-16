@@ -48,6 +48,15 @@ jobs:
             git -C source log -1 --format='%H %d %s'
           fi
 
+      # release/scripts/addons is a git submodule of the Blender repo. Without
+      # it the packaged bundle ships an empty addons/ dir and every io_*
+      # importer (FBX, glTF, OBJ, ...) fails at startup.
+      - name: Init Blender addons submodule
+        shell: bash
+        run: |
+          git -C source submodule update --init --depth 1 release/scripts/addons
+          echo "addons: $(ls source/release/scripts/addons | wc -l) entries"
+
       # Portable, self-contained svn (no MSI, no registry, no PATH-snapshot trap).
       # Verified: Apache-Subversion-1.14.5.zip contains bin/svn.exe + all libsvn DLLs.
       - name: Install Subversion (portable)
@@ -248,13 +257,32 @@ jobs:
               echo "  bundled dll: $dll <- $src"
             fi
           done
+          # The import scan alone misses two second-level deps (DLLs imported
+          # by bundled DLLs, not by the exe) and the private CRT assembly the
+          # exe's embedded manifest requires (missing blender.crt = the exe
+          # fails to START with a side-by-side error on any clean machine).
+          for f in swresample-3.dll tbbmalloc.dll; do
+            src=$(find lib/win64_vc15 -iname "$f" -not -path "*/debug/*" | head -1)
+            if [ -n "$src" ]; then cp "$src" "$EXE_DIR/"; echo "  bundled dll (2nd-level): $f"; else echo "::warning::$f not found in libs"; fi
+          done
+          mkdir -p "$EXE_DIR/blender.crt"
+          cp scripts/blender.crt.manifest "$EXE_DIR/blender.crt/blender.crt.manifest"
+          for f in concrt140 msvcp140 msvcp140_1 msvcp140_2 msvcp140_atomic_wait msvcp140_codecvt_ids vcruntime140 vcruntime140_1; do
+            src=$(find lib/win64_vc15 -iname "$f.dll" -not -path "*/debug/*" | head -1)
+            if [ -n "$src" ]; then cp "$src" "$EXE_DIR/blender.crt/"; fi
+          done
+          ls "$EXE_DIR/blender.crt/"
+          # Patch the bundled Python UI layer for the stripped spaces (the
+          # stock bl_ui register() aborts at the first stripped-space class,
+          # leaving TOPBAR menus and the io_* importers unregistered).
+          python scripts/patch_scripts_bundle.py "$EXE_DIR/2.83/scripts"
           # Sanity: the bundle must contain the python dll if python was built.
           test -f "$EXE_DIR/python37.dll" || echo "::warning::python37.dll not bundled"
           ZIP="$GITHUB_WORKSPACE/Vibe3D-windows-x64-portable.zip"
           if command -v 7z > /dev/null 2>&1; then
-            (cd "$EXE_DIR" && 7z a -tzip "$(cygpath -w "$ZIP")" Vibe3D.exe 2.83 *.dll > /dev/null)
+            (cd "$EXE_DIR" && 7z a -tzip "$(cygpath -w "$ZIP")" Vibe3D.exe 2.83 blender.crt *.dll > /dev/null)
           else
-            pwsh -Command "Compress-Archive -Path '$(cygpath -w "$EXE_DIR")\Vibe3D.exe','$(cygpath -w "$EXE_DIR")\2.83' -DestinationPath '$(cygpath -w "$ZIP")' -Force; if (Test-Path '$(cygpath -w "$EXE_DIR")\*.dll') { Compress-Archive -Path '$(cygpath -w "$EXE_DIR")\*.dll' -Update -DestinationPath '$(cygpath -w "$ZIP")' }"
+            pwsh -Command "Compress-Archive -Path '$(cygpath -w "$EXE_DIR")\Vibe3D.exe','$(cygpath -w "$EXE_DIR")\2.83','$(cygpath -w "$EXE_DIR")\blender.crt' -DestinationPath '$(cygpath -w "$ZIP")' -Force; if (Test-Path '$(cygpath -w "$EXE_DIR")\*.dll') { Compress-Archive -Path '$(cygpath -w "$EXE_DIR")\*.dll' -Update -DestinationPath '$(cygpath -w "$ZIP")' }"
           fi
           ls -la "$ZIP"
 

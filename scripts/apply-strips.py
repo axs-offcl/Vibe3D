@@ -315,6 +315,23 @@ def main() -> int:
     for rel, old, new, label in W2_BLOCK_REPLACEMENTS:
         failures += process(root / rel, rel, old, new, label, mode="block")
 
+    # Overlay the Vibe3D factory startup: upstream's embedded startup.blend
+    # contains a Timeline (SPACE_ACTION) area; GUI-mode init on that area
+    # access-violates in the stripped binary (headless runs are unaffected,
+    # which is why a green CI build alone does not prove GUI health).
+    startup_src = Path(__file__).resolve().parent.parent / "datafiles" / "startup.blend"
+    startup_dst = root / "release/datafiles/startup.blend"
+    if not startup_src.exists():
+        print("MISSING FILE: datafiles/startup.blend (repo)")
+        failures += 1
+    else:
+        startup_dst.parent.mkdir(parents=True, exist_ok=True)
+        if not startup_dst.exists() or startup_dst.read_bytes() != startup_src.read_bytes():
+            shutil.copy2(startup_src, startup_dst)
+            print("patched: factory startup.blend -> Vibe3D layout (no stripped-space areas)")
+        else:
+            print("already patched: factory startup.blend")
+
     print("STRIP WAVE 1 OK" if w1 == 0 else f"STRIP WAVE 1 FAILED ({w1} problems)")
     print("STRIP WAVE 2 OK" if failures == 0 else f"STRIP WAVES FAILED ({failures} problems)")
     return 1 if failures else 0
